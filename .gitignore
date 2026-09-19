@@ -16,3 +16,6 @@ frontend/package.json.md5
 .idea/
 .vscode/
 *.swp
+
+# Work session context (not for GitHub)
+.memory/
