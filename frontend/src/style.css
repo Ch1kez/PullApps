@@ -1,0 +1,560 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #1b2636;
+  color: #e7ecf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #142033;
+  border-bottom: 1px solid #233146;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.auth-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  transition: filter 0.15s;
+}
+
+.auth-pill:hover { filter: brightness(1.15); }
+
+.auth-unknown { background: #2a3850; color: #b9c4d6; }
+.auth-ok      { background: #1f3a2a; color: #9be0a8; border-color: #2c5b3e; }
+.auth-bad     { background: #3a1f24; color: #ffb1b1; border-color: #5b2c34; }
+
+/* Sign-in panel */
+.signin {
+  background: #18253a;
+  border-bottom: 1px solid #233146;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.signin.hidden { display: none; }
+
+.signin-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.signin-row.hidden { display: none; }
+
+.signin input[type="email"],
+.signin input[type="password"],
+.signin input[type="text"] {
+  flex: 1;
+  background: #0f1928;
+  border: 1px solid #2b3a52;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e7ecf3;
+  font-size: 13px;
+  outline: none;
+}
+
+.signin input:focus { border-color: #4a78c2; }
+
+.signin-msg {
+  flex: 1;
+  font-size: 12px;
+  color: #98a3b6;
+}
+.signin-msg-error { color: #ffb1b1; }
+.signin-msg-info  { color: #9bc6e0; }
+
+button.ghost {
+  background: transparent;
+  color: #98a3b6;
+  border: 1px solid #2b3a52;
+}
+button.ghost:hover:not(:disabled) {
+  background: #1f2a3d;
+  color: #e7ecf3;
+}
+
+/* When an iPhone is plugged in and visible to libimobiledevice, the "From
+   iPhone" button gently pulses so the user knows the action is live. */
+button.ghost.connected {
+  border-color: #4a78c2;
+  color: #d6e4f7;
+  animation: iphone-pulse 2.4s ease-in-out infinite;
+}
+@keyframes iphone-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(74, 120, 194, 0.55), 0 0 12px 0 rgba(74, 120, 194, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(74, 120, 194, 0.0), 0 0 18px 2px rgba(74, 120, 194, 0.55);
+  }
+}
+
+.signin-current {
+  background: #122236;
+  border: 1px solid #233146;
+  border-radius: 6px;
+  padding: 8px 12px;
+  justify-content: space-between;
+}
+
+.signin-current-label {
+  font-size: 13px;
+  color: #b9c4d6;
+}
+.signin-current-label strong {
+  color: #e7ecf3;
+  font-weight: 600;
+}
+
+.search-row, .folder-row, .manual-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #233146;
+}
+
+.manual-row { padding-top: 0; }
+
+.install-row {
+  border-bottom: 1px solid rgba(74, 120, 194, 0.35);
+  background: #162236;
+}
+.install-row input[type="text"].install-ready {
+  border-color: #4a78c2;
+  color: #d6e4f7;
+}
+button.ghost.install-active {
+  border-color: #4a78c2;
+  color: #d6e4f7;
+}
+
+.folder-row label, .manual-row label {
+  color: #98a3b6;
+  font-size: 12px;
+  width: 60px;
+}
+
+.search-row input[type="text"],
+.folder-row input[type="text"],
+.manual-row input[type="text"] {
+  flex: 1;
+  background: #0f1928;
+  border: 1px solid #2b3a52;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e7ecf3;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-row input[type="text"]:focus,
+.folder-row input[type="text"]:focus,
+.manual-row input[type="text"]:focus {
+  border-color: #4a78c2;
+}
+
+.search-row input[type="number"] {
+  width: 64px;
+  background: #0f1928;
+  border: 1px solid #2b3a52;
+  border-radius: 6px;
+  padding: 8px;
+  color: #e7ecf3;
+  font-size: 13px;
+  outline: none;
+  text-align: center;
+}
+
+button {
+  background: #2c5da3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+button:hover:not(:disabled) { background: #3a72c1; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.results {
+  flex: 1;
+  overflow-y: auto;
+  /* No top padding: filter bar (when present) sits flush against the controls
+     above. Bottom keeps a little breathing room before the status footer. */
+  padding: 0 0 8px 0;
+}
+
+.empty {
+  text-align: center;
+  color: #6e7a90;
+  padding: 32px 16px;
+  font-size: 13px;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1f2a3d;
+  --progress: 0%;
+  background:
+    linear-gradient(to right,
+      rgba(74, 120, 194, 0.22) 0%,
+      rgba(74, 120, 194, 0.22) var(--progress),
+      transparent var(--progress));
+  transition: background 0.18s ease-out;
+}
+
+/* App icon thumbnail on iPhone-list rows (lazy-fetched from iTunes lookup).
+   No background, no shadow — Apple's artwork JPGs already have the visual
+   weight they need; anything behind shows as a ring at the rounded corners. */
+.row-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+  /* Hide the browser's broken-image glyph when src never resolves (delisted
+     apps): no border, no alt-text, transparent text colour. */
+  color: transparent;
+  font-size: 0;
+  border: 0;
+}
+.row-icon.loaded { opacity: 1; }
+.row-icon:not(.loaded) { width: 0; margin: 0; }
+
+.row.downloading {
+  background:
+    linear-gradient(to right,
+      rgba(74, 120, 194, 0.35) 0%,
+      rgba(74, 120, 194, 0.35) var(--progress),
+      rgba(74, 120, 194, 0.08) var(--progress));
+}
+
+.row.done {
+  background:
+    linear-gradient(to right,
+      rgba(60, 140, 80, 0.30) 0%,
+      rgba(60, 140, 80, 0.30) 100%);
+}
+
+.row:hover { filter: brightness(1.08); }
+
+.row-progress {
+  color: #b9c4d6;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-badge {
+  font-size: 10px;
+  background: #2a3850;
+  color: #b9c4d6;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.row-badge-iphone {
+  background: #2c5da3;
+  color: white;
+}
+
+/* Per-row Apple ID (DSID) chip */
+.dsid-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #2a3850;
+  color: #b9c4d6;
+  white-space: nowrap;
+  cursor: help;
+}
+.dsid-chip.dsid-match {
+  background: #1f3a2a;
+  color: #9be0a8;
+  border: 1px solid #2c5b3e;
+}
+.dsid-chip.dsid-mismatch {
+  background: #3a1f24;
+  color: #ffb1b1;
+  border: 1px solid #5b2c34;
+}
+.dsid-chip.dsid-unknown {
+  background: #2a3850;
+  color: #98a3b6;
+}
+
+/* App Store itemId chip — shown when we resolved the ID from device metadata */
+.appid-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(74, 120, 194, 0.18);
+  color: #9bc6e0;
+  border: 1px solid rgba(74, 120, 194, 0.35);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Inline App ID retry input shown when ipatool can't resolve a delisted bundle */
+.app-id-retry {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 4px 0;
+  width: 100%;
+  align-items: center;
+}
+.app-id-input {
+  flex: 1;
+  background: #0f1928;
+  border: 1px solid #5b2c34;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #e7ecf3;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+}
+.app-id-input:focus { border-color: #4a78c2; }
+.app-id-retry-btn { padding: 6px 12px; font-size: 12px; }
+.app-id-cancel { padding: 6px 12px; font-size: 12px; }
+
+/* Sticky filter bar above iPhone-list rows */
+.filter-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 16px;
+  background: linear-gradient(to bottom, #1b2636 80%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #233146;
+}
+.filter-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+.filter-bar input {
+  flex: 1;
+  background: #0f1928;
+  border: 1px solid #2b3a52;
+  border-radius: 6px;
+  padding: 6px 28px 6px 10px; /* extra right padding leaves room for clear button */
+  color: #e7ecf3;
+  font-size: 13px;
+  outline: none;
+}
+.filter-bar input:focus { border-color: #4a78c2; }
+.filter-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: #2b3a52;
+  color: #98a3b6;
+  border: none;
+  font-size: 14px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.filter-clear.visible { display: flex; }
+.filter-clear:hover { background: #4a78c2; color: white; }
+.filter-count {
+  font-size: 12px;
+  color: #98a3b6;
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: right;
+}
+
+/* "Sign in as owner" — shown when a row's DSID differs from the signed-in one */
+.signin-as-owner {
+  background: rgba(218, 99, 99, 0.18);
+  color: #ffb1b1;
+  border: 1px dashed rgba(218, 99, 99, 0.45);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.signin-as-owner:hover { background: rgba(218, 99, 99, 0.32); color: #ffd0d0; }
+
+/* "Use App ID" inline link on iPhone-list rows */
+.app-id-link {
+  background: transparent;
+  color: #4a78c2;
+  border: 1px dashed rgba(74, 120, 194, 0.4);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.app-id-link:hover { background: rgba(74, 120, 194, 0.15); color: #6a9be0; }
+
+/* Version chip + dropdown */
+.version-chip {
+  background: rgba(74, 120, 194, 0.15);
+  color: #b9c4d6;
+  border: 1px solid rgba(74, 120, 194, 0.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+}
+.version-chip:hover { background: rgba(74, 120, 194, 0.3); }
+
+.version-menu {
+  position: fixed;
+  z-index: 100;
+  background: #1a2436;
+  border: 1px solid #2b3a52;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.version-loading, .version-error {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #98a3b6;
+}
+.version-error { color: #ffb1b1; }
+
+.version-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  color: #e7ecf3;
+  border: none;
+  padding: 7px 12px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+  gap: 10px;
+}
+.version-item:hover { background: #243349; }
+
+.version-item-latest {
+  border-bottom: 1px solid #2b3a52;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.ver-num { flex: 1; }
+.ver-date { color: #6e7a90; font-size: 11px; }
+.ver-tag {
+  background: #2c5da3;
+  color: white;
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.row-main { min-width: 0; flex: 1; }
+
+.row-title {
+  font-weight: 500;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-sub {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: #8a96aa;
+  margin-top: 3px;
+}
+
+.bundle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.version { color: #b9c4d6; }
+.price { color: #9be0a8; }
+
+.dl-btn {
+  flex-shrink: 0;
+  min-width: 110px;
+}
+
+.status {
+  padding: 8px 16px;
+  border-top: 1px solid #233146;
+  font-size: 12px;
+  color: #98a3b6;
+  background: #142033;
+  min-height: 32px;
+}
+.status-ok    { color: #9be0a8; }
+.status-error { color: #ffb1b1; }

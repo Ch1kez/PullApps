@@ -1,0 +1,84 @@
+name: Release build
+
+# Builds a universal macOS .app whenever a vX.Y.Z tag is pushed and attaches
+# it to the corresponding GitHub Release. Also runnable on demand via the
+# workflow_dispatch button in the Actions tab — useful for re-cutting an
+# existing release without bumping the version.
+#
+# The universal binary contains both x86_64 (Intel) and arm64 (Apple Silicon)
+# slices, so a single artifact works on every modern Mac. We don't sign or
+# notarize — distribution is right-click → Open the first time on each Mac.
+#
+# Tools the app shells out to at runtime (ipatool, libimobiledevice family)
+# are NOT bundled — end users install them via Homebrew. See README.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to attach the build to (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # needed to upload the asset to the release
+
+jobs:
+  build-macos-universal:
+    runs-on: macos-14  # Apple Silicon runner; supports cross-compiling to universal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Verify Wails install
+        run: wails doctor || true  # informational; don't fail the build on optional missing deps
+
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build universal .app
+        run: wails build -platform darwin/universal -clean
+
+      - name: Package as zip
+        id: pkg
+        run: |
+          cd build/bin
+          ARTIFACT="ipatool-gui-${{ steps.tag.outputs.name }}-macos-universal.zip"
+          # ditto preserves resource forks and extended attrs better than `zip`
+          # and is the standard way to package a .app for distribution.
+          ditto -c -k --sequesterRsrc --keepParent ipatool-gui.app "$ARTIFACT"
+          echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
+          ls -lh "$ARTIFACT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          files: build/bin/${{ steps.pkg.outputs.artifact }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

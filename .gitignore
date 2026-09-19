@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Build artifacts
+/ipatool-gui
+/ipa-downloader
+build/bin/
+build/ipatool
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/package.json.md5
+
+# Editor
+.idea/
+.vscode/
+*.swp

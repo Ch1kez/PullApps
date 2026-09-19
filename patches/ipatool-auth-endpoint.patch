@@ -1,0 +1,350 @@
+diff --git a/pkg/appstore/appstore_bag.go b/pkg/appstore/appstore_bag.go
+index 29108a2f..8de570c5 100644
+--- a/pkg/appstore/appstore_bag.go
++++ b/pkg/appstore/appstore_bag.go
+@@ -33,12 +33,13 @@ func (t *appstore) Bag(input BagInput) (BagOutput, error) {
+ 	}
+ 
+ 	return BagOutput{
+-		AuthEndpoint: res.Data.URLBag.AuthEndpoint,
++		AuthEndpoint: normalizeAuthEndpoint(res.Data.AuthEndpoint, res.Data.URLBag.AuthEndpoint),
+ 	}, nil
+ }
+ 
+ type bagResult struct {
+-	URLBag urlBag `plist:"urlBag,omitempty"`
++	URLBag       urlBag `plist:"urlBag,omitempty"`
++	AuthEndpoint string `plist:"authenticateAccount,omitempty"`
+ }
+ 
+ type urlBag struct {
+diff --git a/pkg/appstore/appstore_bag_test.go b/pkg/appstore/appstore_bag_test.go
+index ae9f1f27..15d94aed 100644
+--- a/pkg/appstore/appstore_bag_test.go
++++ b/pkg/appstore/appstore_bag_test.go
+@@ -118,6 +118,29 @@ var _ = Describe("AppStore (Bag)", func() {
+ 		})
+ 	})
+ 
++	When("request is successful with authenticateAccount at the root", func() {
++		BeforeEach(func() {
++			mockMachine.EXPECT().
++				MacAddress().
++				Return("aa:bb:cc:dd:ee:ff", nil)
++
++			mockBagClient.EXPECT().
++				Send(gomock.Any()).
++				Return(http.Result[bagResult]{
++					StatusCode: gohttp.StatusOK,
++					Data: bagResult{
++						AuthEndpoint: "https://auth.itunes.apple.com/auth/v1/native",
++					},
++				}, nil)
++		})
++
++		It("returns the normalized native auth endpoint", func() {
++			out, err := as.Bag(BagInput{})
++			Expect(err).ToNot(HaveOccurred())
++			Expect(out.AuthEndpoint).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++		})
++	})
++
+ 	When("request is successful but authenticateAccount is empty", func() {
+ 		BeforeEach(func() {
+ 			mockMachine.EXPECT().
+@@ -132,10 +155,10 @@ var _ = Describe("AppStore (Bag)", func() {
+ 				}, nil)
+ 		})
+ 
+-		It("returns empty auth endpoint", func() {
++		It("returns the fallback auth endpoint", func() {
+ 			out, err := as.Bag(BagInput{})
+ 			Expect(err).ToNot(HaveOccurred())
+-			Expect(out.AuthEndpoint).To(BeEmpty())
++			Expect(out.AuthEndpoint).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
+ 		})
+ 	})
+ })
+diff --git a/pkg/appstore/appstore_login.go b/pkg/appstore/appstore_login.go
+index 419fdeaa..cc0326d0 100644
+--- a/pkg/appstore/appstore_login.go
++++ b/pkg/appstore/appstore_login.go
+@@ -65,6 +65,7 @@ type loginResult struct {
+ 
+ func (t *appstore) login(email, password, authCode, guid, endpoint string) (Account, error) {
+ 	redirect := ""
++	authEndpoint := normalizeAuthEndpoint(endpoint)
+ 
+ 	var (
+ 		err error
+@@ -74,11 +75,18 @@ func (t *appstore) login(email, password, authCode, guid, endpoint string) (Acco
+ 	retry := true
+ 
+ 	for attempt := 1; retry && attempt <= 4; attempt++ {
+-		request := t.loginRequest(email, password, authCode, guid, endpoint, attempt)
++		request := t.loginRequest(email, password, authCode, guid, authEndpoint, attempt)
+ 		request.URL, _ = util.IfEmpty(redirect, request.URL), ""
+ 		res, err = t.loginClient.Send(request)
+ 
+ 		if err != nil {
++			if discoveredEndpoint := authEndpointFromResponseError(err); discoveredEndpoint != "" && discoveredEndpoint != authEndpoint {
++				authEndpoint = discoveredEndpoint
++				redirect = ""
++				retry = true
++				continue
++			}
++
+ 			return Account{}, fmt.Errorf("request failed: %w", err)
+ 		}
+ 
+diff --git a/pkg/appstore/appstore_login_test.go b/pkg/appstore/appstore_login_test.go
+index 3521eeb1..d6b7706c 100644
+--- a/pkg/appstore/appstore_login_test.go
++++ b/pkg/appstore/appstore_login_test.go
+@@ -73,6 +73,9 @@ var _ = Describe("AppStore (Login)", func() {
+ 			BeforeEach(func() {
+ 				mockClient.EXPECT().
+ 					Send(gomock.Any()).
++					Do(func(req http.Request) {
++						Expect(req.URL).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++					}).
+ 					Return(http.Result[loginResult]{}, errors.New(""))
+ 			})
+ 
+@@ -201,6 +204,32 @@ var _ = Describe("AppStore (Login)", func() {
+ 			})
+ 		})
+ 
++		When("store API response contains a new auth endpoint", func() {
++			BeforeEach(func() {
++				firstCall := mockClient.EXPECT().
++					Send(gomock.Any()).
++					Return(http.Result[loginResult]{}, &http.ResponseDecodeError{
++						Cause: errors.New("decode failed"),
++						URLs:  []string{"https://auth.itunes.apple.com/auth/v1/native"},
++					})
++				secondCall := mockClient.EXPECT().
++					Send(gomock.Any()).
++					Do(func(req http.Request) {
++						Expect(req.URL).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++					}).
++					Return(http.Result[loginResult]{}, errors.New("test complete"))
++				gomock.InOrder(firstCall, secondCall)
++			})
++
++			It("retries with the discovered endpoint", func() {
++				_, err := as.Login(LoginInput{
++					Endpoint: "https://example.com/authenticate",
++					Password: testPassword,
++				})
++				Expect(err).To(MatchError(ContainSubstring("test complete")))
++			})
++		})
++
+ 		When("store API redirects too much", func() {
+ 			BeforeEach(func() {
+ 				mockClient.EXPECT().
+diff --git a/pkg/appstore/auth_endpoint.go b/pkg/appstore/auth_endpoint.go
+new file mode 100644
+index 00000000..470d00e6
+--- /dev/null
++++ b/pkg/appstore/auth_endpoint.go
+@@ -0,0 +1,68 @@
++package appstore
++
++import (
++	"errors"
++	"fmt"
++	"html"
++	"net/url"
++	"regexp"
++	"strings"
++
++	"github.com/majd/ipatool/v2/pkg/http"
++)
++
++var authEndpointURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
++
++func normalizeAuthEndpoint(endpoints ...string) string {
++	for _, endpoint := range endpoints {
++		endpoint = strings.TrimSpace(endpoint)
++		if endpoint == "" {
++			continue
++		}
++
++		normalized := normalizeNativeAuthEndpoint(endpoint)
++		if normalized != "" {
++			return normalized
++		}
++
++		return endpoint
++	}
++
++	return fmt.Sprintf("https://%s%s", PrivateAuthDomain, PrivateAuthPathNative)
++}
++
++func authEndpointFromResponseError(err error) string {
++	var decodeErr *http.ResponseDecodeError
++	if !errors.As(err, &decodeErr) {
++		return ""
++	}
++
++	return authEndpointFromText(strings.Join(append(decodeErr.URLs, decodeErr.Body), " "))
++}
++
++func authEndpointFromText(text string) string {
++	text = html.UnescapeString(strings.ReplaceAll(text, `\/`, `/`))
++	matches := authEndpointURLPattern.FindAllString(text, -1)
++	for _, match := range matches {
++		if endpoint := normalizeNativeAuthEndpoint(strings.TrimRight(match, ".,;)")); endpoint != "" {
++			return endpoint
++		}
++	}
++
++	return ""
++}
++
++func normalizeNativeAuthEndpoint(endpoint string) string {
++	parsed, err := url.Parse(endpoint)
++	if err != nil || parsed.Host != PrivateAuthDomain {
++		return ""
++	}
++
++	path := strings.TrimRight(parsed.Path, "/")
++	if !strings.HasSuffix(path, "/fast") {
++		path = strings.TrimRight(path, "/") + "/fast"
++	}
++	parsed.Path = path + "/"
++
++	return parsed.String()
++}
+diff --git a/pkg/appstore/auth_endpoint_test.go b/pkg/appstore/auth_endpoint_test.go
+new file mode 100644
+index 00000000..b9ed5d6f
+--- /dev/null
++++ b/pkg/appstore/auth_endpoint_test.go
+@@ -0,0 +1,40 @@
++package appstore
++
++import (
++	"errors"
++
++	"github.com/majd/ipatool/v2/pkg/http"
++	. "github.com/onsi/ginkgo/v2"
++	. "github.com/onsi/gomega"
++)
++
++var _ = Describe("Auth endpoint", func() {
++	It("falls back to the native auth endpoint", func() {
++		Expect(normalizeAuthEndpoint()).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++	})
++
++	It("normalizes Apple's native auth endpoint with the fast path and trailing slash", func() {
++		Expect(normalizeAuthEndpoint("https://auth.itunes.apple.com/auth/v1/native")).
++			To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++		Expect(normalizeAuthEndpoint("https://auth.itunes.apple.com/auth/v1/native/fast")).
++			To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++	})
++
++	It("keeps legacy endpoints unchanged", func() {
++		endpoint := "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate"
++		Expect(normalizeAuthEndpoint(endpoint)).To(Equal(endpoint))
++	})
++
++	It("extracts a native endpoint from an escaped response body", func() {
++		body := `{"authenticateAccount":"https:\/\/auth.itunes.apple.com\/auth\/v1\/native"}`
++		Expect(authEndpointFromText(body)).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++	})
++
++	It("extracts a native endpoint from a response decode error", func() {
++		err := &http.ResponseDecodeError{
++			Cause: errors.New("decode failed"),
++			URLs:  []string{"https://auth.itunes.apple.com/auth/v1/native"},
++		}
++		Expect(authEndpointFromResponseError(err)).To(Equal("https://auth.itunes.apple.com/auth/v1/native/fast/"))
++	})
++})
+diff --git a/pkg/appstore/constants.go b/pkg/appstore/constants.go
+index 66201514..62c257a1 100644
+--- a/pkg/appstore/constants.go
++++ b/pkg/appstore/constants.go
+@@ -24,6 +24,8 @@ const (
+ 	PrivateAppStoreAPIDomain       = "buy." + iTunesAPIDomain
+ 	PrivateAppStoreAPIPathPurchase = "/WebObjects/MZFinance.woa/wa/buyProduct"
+ 	PrivateAppStoreAPIPathDownload = "/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct"
++	PrivateAuthDomain              = "auth." + iTunesAPIDomain
++	PrivateAuthPathNative          = "/auth/v1/native/fast/"
+ 
+ 	HTTPHeaderStoreFront = "X-Set-Apple-Store-Front"
+ 	HTTPHeaderPod        = "pod"
+diff --git a/pkg/http/client.go b/pkg/http/client.go
+index 22de26b1..9e196bed 100644
+--- a/pkg/http/client.go
++++ b/pkg/http/client.go
+@@ -20,8 +20,25 @@ var (
+ 	documentXMLPattern = regexp.MustCompile(`(?is)<Document\b[^>]*>(.*)</Document>`)
+ 	plistXMLPattern    = regexp.MustCompile(`(?is)<plist\b[^>]*>.*?</plist>`)
+ 	dictXMLPattern     = regexp.MustCompile(`(?is)<dict\b[^>]*>.*</dict>`)
++	urlPattern         = regexp.MustCompile(`https?://[^\s"'<>]+`)
+ )
+ 
++type ResponseDecodeError struct {
++	Cause       error
++	StatusCode  int
++	ContentType string
++	Body        string
++	URLs        []string
++}
++
++func (e *ResponseDecodeError) Error() string {
++	return fmt.Sprintf("failed to unmarshal xml: %v", e.Cause)
++}
++
++func (e *ResponseDecodeError) Unwrap() error {
++	return e.Cause
++}
++
+ //go:generate go run go.uber.org/mock/mockgen -source=client.go -destination=client_mock.go -package=http
+ type Client[R interface{}] interface {
+ 	Send(request Request) (Result[R], error)
+@@ -170,7 +187,13 @@ func (c *client[R]) handleXMLResponse(res *http.Response) (Result[R], error) {
+ 
+ 	_, err = plist.Unmarshal(normalizedBody, &data)
+ 	if err != nil {
+-		return Result[R]{}, fmt.Errorf("failed to unmarshal xml: %w", err)
++		return Result[R]{}, &ResponseDecodeError{
++			Cause:       err,
++			StatusCode:  res.StatusCode,
++			ContentType: res.Header.Get("Content-Type"),
++			Body:        truncateBody(body, 500),
++			URLs:        extractURLs(body),
++		}
+ 	}
+ 
+ 	headers := map[string]string{}
+@@ -185,6 +208,25 @@ func (c *client[R]) handleXMLResponse(res *http.Response) (Result[R], error) {
+ 	}, nil
+ }
+ 
++func extractURLs(body []byte) []string {
++	matches := urlPattern.FindAll(body, -1)
++	urls := make([]string, 0, len(matches))
++	for _, match := range matches {
++		urls = append(urls, string(match))
++	}
++
++	return urls
++}
++
++func truncateBody(body []byte, max int) string {
++	trimmed := strings.TrimSpace(string(body))
++	if len(trimmed) <= max {
++		return trimmed
++	}
++
++	return trimmed[:max] + "..."
++}
++
+ func normalizeXMLPlistBody(body []byte) []byte {
+ 	normalized := bytes.TrimSpace(body)
+ 	if len(normalized) == 0 {
