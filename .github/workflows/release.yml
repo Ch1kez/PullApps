@@ -1,4 +1,4 @@
-name: Release build
+name: Release
 
 # Builds a universal macOS .app whenever a vX.Y.Z tag is pushed and attaches
 # it to the corresponding GitHub Release. Also runnable on demand via the
@@ -9,8 +9,8 @@ name: Release build
 # slices, so a single artifact works on every modern Mac. We don't sign or
 # notarize — distribution is right-click → Open the first time on each Mac.
 #
-# Tools the app shells out to at runtime (ipatool, libimobiledevice family)
-# are NOT bundled — end users install them via Homebrew. See README.
+# A compatible ipatool is bundled. The optional iPhone integration still uses
+# libimobiledevice/ideviceinstaller installed by the user. See README.
 
 on:
   push:
@@ -24,28 +24,39 @@ on:
         type: string
 
 permissions:
-  contents: write  # needed to upload the asset to the release
+  contents: read
 
 jobs:
   build-macos-universal:
+    permissions:
+      contents: write
     runs-on: macos-14  # Apple Silicon runner; supports cross-compiling to universal
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25.x'
+          cache: true
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
       - name: Install Wails CLI
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Verify Wails install
@@ -53,32 +64,47 @@ jobs:
 
       - name: Resolve tag name
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            TAG="$INPUT_TAG"
           else
-            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/}"
           fi
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid release tag: $TAG" >&2
+            exit 1
+          }
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build universal .app
-        run: wails build -platform darwin/universal -clean
+        env:
+          IPATOOL_TARGET: universal
+        run: ./scripts/build-app.sh -platform darwin/universal -clean
+
+      - name: Verify universal binaries
+        run: |
+          lipo -archs build/bin/PullApps.app/Contents/MacOS/PullApps
+          lipo -archs build/bin/PullApps.app/Contents/Resources/bin/ipatool
 
       - name: Package as zip
         id: pkg
         run: |
           cd build/bin
-          ARTIFACT="ipatool-gui-${{ steps.tag.outputs.name }}-macos-universal.zip"
+          ARTIFACT="PullApps-${{ steps.tag.outputs.name }}-macos-universal.zip"
           # ditto preserves resource forks and extended attrs better than `zip`
           # and is the standard way to package a .app for distribution.
-          ditto -c -k --sequesterRsrc --keepParent ipatool-gui.app "$ARTIFACT"
+          ditto -c -k --sequesterRsrc --keepParent PullApps.app "$ARTIFACT"
           echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
           ls -lh "$ARTIFACT"
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          files: build/bin/${{ steps.pkg.outputs.artifact }}
-          fail_on_unmatched_files: true
+      - name: Create release and upload artifact
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          ARTIFACT: build/bin/${{ steps.pkg.outputs.artifact }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --verify-tag --generate-notes --title "PullApps $TAG"
+          gh release upload "$TAG" "$ARTIFACT" --clobber

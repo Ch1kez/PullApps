@@ -996,6 +996,8 @@ function showSignin() {
 }
 function hideSignin() {
   signinPanel.classList.add('hidden');
+  signinPassword.value = '';
+  signin2fa.value = '';
 }
 
 authEl.addEventListener('click', () => {

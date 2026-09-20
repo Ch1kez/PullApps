@@ -1,4 +1,12 @@
-# PullApps (IPA Downloader)
+<p align="center">
+  <img src="frontend/src/assets/images/logo-universal.png" width="128" alt="PullApps">
+</p>
+
+# PullApps
+
+[![CI](https://github.com/Ch1kez/PullApps/actions/workflows/ci.yml/badge.svg)](https://github.com/Ch1kez/PullApps/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/Ch1kez/PullApps?display_name=tag)](https://github.com/Ch1kez/PullApps/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 macOS GUI поверх [`ipatool`](https://github.com/majd/ipatool) — вход в App Store
 по Apple ID, поиск и скачивание `.ipa` для приложений, привязанных к вашему
@@ -6,6 +14,28 @@ macOS GUI поверх [`ipatool`](https://github.com/majd/ipatool) — вход
 их App Store ID (работает даже для удалённых из App Store приложений).
 
 Собран на [Wails v2](https://wails.io/) (Go + небольшой vanilla-JS фронтенд).
+
+> PullApps не обходит защиту Apple: скачать можно только приложение, лицензия
+> на которое уже принадлежит вошедшему Apple ID. Проект не связан с Apple Inc.
+
+## Быстрый старт
+
+1. Скачайте `PullApps-…-macos-universal.zip` на странице
+   [Releases](https://github.com/Ch1kez/PullApps/releases) и перенесите
+   `PullApps.app` в `/Applications`.
+2. Для работы с подключённым iPhone установите инструменты:
+
+   ```bash
+   brew install libimobiledevice ideviceinstaller
+   ```
+
+3. Откройте приложение. Пока сборка не подписана Developer ID, при первом
+   запуске используйте правый клик по приложению → **Открыть** и проверьте, что
+   архив скачан именно из этого репозитория.
+
+Совместимый `ipatool` уже включён в релизную сборку. Установка `ipatool` через
+Homebrew нужна только для самостоятельной диагностики или переопределения
+встроенной версии.
 
 ## Что умеет
 
@@ -39,44 +69,41 @@ macOS GUI поверх [`ipatool`](https://github.com/majd/ipatool) — вход
 Вся работа с App Store делегируется `ipatool`; это тонкий GUI поверх него плюс
 прослойка libimobiledevice для интеграции с iPhone.
 
-## Требования
+## Требования для готовой сборки
 
-- macOS (Apple Silicon — для Intel достаточно поправить пути Homebrew)
-- [`ipatool`](https://github.com/majd/ipatool) — вход и скачивание:
-  ```bash
-  brew install ipatool
-  ```
+- macOS 13+ на Apple Silicon или Intel;
 - [`libimobiledevice`](https://libimobiledevice.org/) — интеграция с iPhone
-  (`ideviceinstaller` + `idevice_id`):
+  (`ideviceinstaller` + `idevice_id`), только если нужны функции **From iPhone**
+  и **Install**:
   ```bash
   brew install libimobiledevice ideviceinstaller
   ```
-- Apple ID, у которого есть хотя бы одно приложение в истории покупок
-  (бесплатные приложения подходят)
+- Apple ID с нужным приложением в истории покупок (бесплатные приложения тоже
+  создают лицензию).
 
 Если интеграция с iPhone не нужна, libimobiledevice можно не ставить — кнопка
 **From iPhone** просто сообщит, что инструмент не найден.
 
-> Важно: используйте свежую версию `ipatool` (2.6.0+). Старые версии ломаются
-> из-за смены эндпоинта авторизации Apple в июне 2026 (ошибка
-> `something went wrong`, HTTP 403). Подробнее — см. «Особенности входа».
+Без интеграции с iPhone приложение продолжает искать и скачивать IPA; недоступны
+только функции чтения списка с устройства и установки по USB.
 
 ## Сборка из исходников
 
 Нужны:
 
-- Go 1.23+
-- Node.js 18+
+- Go 1.25+
+- Node.js 22+
 - Wails CLI:
   ```bash
-  go install github.com/wailsapp/wails/v2/cmd/wails@latest
+  go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
   ```
 
 Сборка:
 
 ```bash
-git clone https://github.com/ВАШ_ЛОГИН/PullApps.git
+git clone https://github.com/Ch1kez/PullApps.git
 cd PullApps
+cd frontend && npm ci && cd ..
 ./scripts/build-app.sh
 open build/bin/PullApps.app
 ```
@@ -121,41 +148,45 @@ app.go                 — весь бэкенд (Wails-методы, обёрт
 frontend/src/          — фронтенд (main.js + style.css)
 scripts/build-app.sh   — полная сборка .app (патченый ipatool + wails build)
 scripts/build-ipatool.sh — сборка патченого ipatool для входа в App Store
-patches/               — патч для ipatool (см. «Особенности входа»)
+patches/               — патч для ipatool (см. «Совместимость ipatool»)
 docs/                  — документация на русском
 .github/workflows/     — сборка универсального macOS .app в GitHub Actions
 ```
 
-## Особенности входа (временный патч)
+## Совместимость ipatool
 
-В июне 2026 Apple сменила эндпоинт авторизации App Store. Релизная версия
-`ipatool` в Homebrew (2.3.x) всё ещё обращается к старому эндпоинту и вход
-падает с пустым ответом `something went wrong` — это ломает и скачивание.
-Исправление — upstream PR, который ещё не вышел в релиз. В этом репозитории
-изменение заведено как патч (`patches/ipatool-auth-endpoint.patch`),
-`scripts/build-ipatool.sh` применяет его к зафиксированному коммиту и собирает
-рабочий бинарник.
+Apple меняла протокол авторизации App Store, поэтому старые сборки `ipatool`
+могут завершаться ошибкой `something went wrong` или HTTP 403. Релиз PullApps
+собирает совместимую версию из зафиксированного upstream-коммита и применяет
+проверяемый патч [`patches/ipatool-auth-endpoint.patch`](patches/ipatool-auth-endpoint.patch).
+Это делает сборку воспроизводимой и не зависит от текущей версии Homebrew.
 
-Когда исправление попадёт в Homebrew-релиз `ipatool`, патч и шаг его сборки можно
-будет выпилить и вернуться к обычному `brew install ipatool`.
+Когда эквивалентное исправление стабильно войдёт в upstream-релиз, временный
+патч можно будет удалить.
+
+## Приватность и безопасность
+
+- У проекта нет сервера, аналитики и телеметрии.
+- Пароль и код 2FA не записываются PullApps на диск. Они передаются локальному
+  `ipatool`, а полученный токен хранится в macOS Keychain.
+- Для нескольких аккаунтов токены остаются в Keychain; локальные cookie и
+  метаданные сохраняются с правами только для текущего пользователя.
+- Не публикуйте логи или скриншоты с Apple ID, DSID, UDID, cookie и токенами.
+- Загружайте IPA только через свой Apple ID и не используйте файлы из
+  неизвестных источников, особенно для банковских приложений.
+
+Подробная модель хранения и способ приватно сообщить об уязвимости описаны в
+[`SECURITY.md`](SECURITY.md).
 
 ## Лицензия
 
 MIT. Оригинал форка — [jowtron/ipa-downloader](https://github.com/jowtron/ipa-downloader).
 
-## Временный контекст работы (не в git)
-
-Директория `.memory/` (исключена из git через `.gitignore`) хранит служебный
-контекст сессий разработки: `SESSION_HANDOFF.md` — сводка состояния и следующих
-шагов, `GUIDE_SBER_MAX_SETUP.md` — исходное руководство. Она нужна, чтобы при
-перезапуске работы над проектом контекст не терялся. В публичный репозиторий
-эти файлы не попадают.
-
 ## Что это НЕ
 
 - Это не инструмент для пиратства: он скачивает только приложения, на которые у
   вашего подписанного Apple ID есть лицензия. `ipatool` не обходит ограничения.
-- Не подписано Developer ID. При раздаче на другие Mac первый запуск — через
+- Пока не подписано Developer ID. При раздаче на другие Mac первый запуск — через
   правый клик → «Открыть».
 - Не iOS: это macOS-приложение, которое общается с iPhone по USB через
   libimobiledevice; на iOS оно не запускается.

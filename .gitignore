@@ -10,6 +10,16 @@
 node_modules/
 frontend/dist/
 frontend/package.json.md5
+npm-debug.log*
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+*.ipa
 
 # Editor
 .idea/

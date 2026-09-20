@@ -441,7 +441,20 @@ func (a *App) vaultManifestCandidates() []string {
 func (a *App) vaultManifestPath() string { return filepath.Join(a.vaultRoot(), "accounts.json") }
 
 func (a *App) vaultCookiesPath(key string) string {
+	if !validAccountKey(key) {
+		return ""
+	}
 	return filepath.Join(a.vaultRoot(), sanitizeFilename(key), "cookies")
+}
+
+var accountKeyRe = regexp.MustCompile(`^[A-Za-z0-9@._+\-]{1,254}$`)
+
+// validAccountKey keeps account-controlled values confined to the vault root.
+// Normal keys are a numeric DSID or an email address. Rejecting dot path
+// components is important because RemoveAccount removes the account directory.
+func validAccountKey(key string) bool {
+	key = strings.TrimSpace(key)
+	return key != "." && key != ".." && accountKeyRe.MatchString(key)
 }
 
 // ipatoolAccount is the JSON shape ipatool stores in its own keychain entry
@@ -709,8 +722,8 @@ func (a *App) manifestByDSID(dsid string) (StoredAccount, bool) {
 // DSID. The previously-active session is snapshotted first so nothing is lost.
 func (a *App) SwitchAccount(key string) error {
 	key = strings.TrimSpace(key)
-	if key == "" {
-		return errors.New("account key is required")
+	if !validAccountKey(key) {
+		return errors.New("invalid account key")
 	}
 	a.snapshotActive()
 
@@ -770,8 +783,8 @@ func vaultPutBlob2(service, acct string, blob []byte) error {
 // account is currently active, its live ipatool session is left untouched.
 func (a *App) RemoveAccount(key string) error {
 	key = strings.TrimSpace(key)
-	if key == "" {
-		return errors.New("account key is required")
+	if !validAccountKey(key) {
+		return errors.New("invalid account key")
 	}
 	_ = vaultDeleteBlob(key)
 	if p := a.vaultCookiesPath(key); p != "" {

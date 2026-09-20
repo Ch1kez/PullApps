@@ -21,7 +21,8 @@
 #     - ~/Library/Application Support/PullApps/bin/ipatool (dev override that
 #       app.go's findTool checks), unless SKIP_INSTALL=1
 #
-# Requirements: git, go (1.21+). MIT-licensed source (majd/ipatool).
+# Set IPATOOL_TARGET=universal on macOS to produce an arm64+x86_64 binary.
+# Requirements: git, go (1.21+), plus lipo for a universal build.
 set -euo pipefail
 
 # --- pinned upstream base; the vendored patch is generated against this commit.
@@ -47,9 +48,23 @@ git -C "$WORK/ipatool" checkout --quiet "$IPATOOL_BASE_SHA"
 echo "==> Applying $(basename "$PATCH")"
 git -C "$WORK/ipatool" apply "$PATCH"
 
-echo "==> Building (GOOS/GOARCH = host)"
 mkdir -p "$(dirname "$OUT")"
-( cd "$WORK/ipatool" && go build -trimpath -o "$OUT" . )
+if [ "${IPATOOL_TARGET:-host}" = "universal" ]; then
+  command -v lipo >/dev/null || { echo "error: 'lipo' is required for a universal build" >&2; exit 1; }
+  echo "==> Building universal macOS binary (arm64 + x86_64)"
+  # ipatool's keyring stack uses CGO on macOS. clang can cross-compile both
+  # slices on an Apple Silicon runner when the target architecture is explicit.
+  ( cd "$WORK/ipatool" && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+      CGO_CFLAGS="-arch arm64" CGO_LDFLAGS="-arch arm64" \
+      go build -trimpath -o "$WORK/ipatool-arm64" . )
+  ( cd "$WORK/ipatool" && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+      CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64" \
+      go build -trimpath -o "$WORK/ipatool-amd64" . )
+  lipo -create -output "$OUT" "$WORK/ipatool-arm64" "$WORK/ipatool-amd64"
+else
+  echo "==> Building (GOOS/GOARCH = host)"
+  ( cd "$WORK/ipatool" && go build -trimpath -o "$OUT" . )
+fi
 echo "==> Built: $OUT"
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
