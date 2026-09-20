@@ -18,7 +18,7 @@
 #   Clones majd/ipatool at the pinned base commit, applies the vendored patch,
 #   builds, and writes the binary to:
 #     - $OUT (default: build/ipatool), for build-app.sh to bundle into the .app
-#     - ~/Library/Application Support/ipatool-gui/bin/ipatool (dev override that
+#     - ~/Library/Application Support/PullApps/bin/ipatool (dev override that
 #       app.go's findTool checks), unless SKIP_INSTALL=1
 #
 # Requirements: git, go (1.21+). MIT-licensed source (majd/ipatool).
@@ -31,7 +31,7 @@ IPATOOL_BASE_SHA="dcddce4650d49d64aaff1b0785d76de01f5227af"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATCH="$REPO_ROOT/patches/ipatool-auth-endpoint.patch"
 OUT="${OUT:-$REPO_ROOT/build/ipatool}"
-APP_SUPPORT_BIN="$HOME/Library/Application Support/ipatool-gui/bin/ipatool"
+APP_SUPPORT_BIN="$HOME/Library/Application Support/PullApps/bin/ipatool"
 
 command -v go  >/dev/null || { echo "error: 'go' not found (needs Go 1.21+)" >&2; exit 1; }
 command -v git >/dev/null || { echo "error: 'git' not found" >&2; exit 1; }

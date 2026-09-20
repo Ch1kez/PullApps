@@ -14,6 +14,8 @@ export function InstallIPA(arg1:string):Promise<main.InstallResult>;
 
 export function InvalidateSignedInDSID():Promise<void>;
 
+export function ListAccounts():Promise<main.AccountList>;
+
 export function ListInstalledApps():Promise<Array<main.InstalledApp>>;
 
 export function ListVersions(arg1:string):Promise<Array<main.Version>>;
@@ -28,6 +30,10 @@ export function PickIPAPath():Promise<string>;
 
 export function PickOutputDir():Promise<string>;
 
+export function RemoveAccount(arg1:string):Promise<void>;
+
 export function Search(arg1:string,arg2:number):Promise<main.SearchResponse>;
 
 export function SignedInDSID():Promise<string>;
+
+export function SwitchAccount(arg1:string):Promise<void>;

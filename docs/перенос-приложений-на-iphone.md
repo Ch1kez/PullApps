@@ -37,16 +37,16 @@ brew install go libimobiledevice ideviceinstaller ipatool
 
 GUI (этот проект) ищет бинарник `ipatool` по приоритету:
 
-1. `~/Library/Application Support/ipatool-gui/bin/ipatool` — самое приоритетное (override);
+1. `~/Library/Application Support/PullApps/bin/ipatool` — самое приоритетное (override);
 2. внутри `.app`: `Contents/Resources/bin/ipatool`;
 3. `/opt/homebrew/bin/ipatool`.
 
 Поэтому можно «переопределить» бинарник свежей версией:
 
 ```bash
-mkdir -p ~/Library/Application\ Support/ipatool-gui/bin
-cp /opt/homebrew/bin/ipatool ~/Library/Application\ Support/ipatool-gui/bin/ipatool
-chmod +x ~/Library/Application\ Support/ipatool-gui/bin/ipatool
+mkdir -p ~/Library/Application\ Support/PullApps/bin
+cp /opt/homebrew/bin/ipatool ~/Library/Application\ Support/PullApps/bin/ipatool
+chmod +x ~/Library/Application\ Support/PullApps/bin/ipatool
 ```
 
 После этого GUI нужно полностью закрыть (Cmd+Q) и открыть заново — только тогда
@@ -91,7 +91,8 @@ chmod +x ~/Library/Application\ Support/ipatool-gui/bin/ipatool
    App Store ID, работает даже для удалённых из App Store приложений).
 4. Выбрать нужное приложение (СБОЛ, MAX) → **Download**.
 
-Файл скачивается в папку, например `~/Downloads/СБОЛ.ipa`.
+Файл скачивается в папку `~/Downloads/PullApps`, например
+`~/Downloads/PullApps/СБОЛ.ipa`.
 
 Полезные команды ipatool для проверки:
 
@@ -122,7 +123,7 @@ ideviceinstaller list
 ### Установка через терминал
 
 ```bash
-ideviceinstaller install ~/Downloads/СБОЛ.ipa
+ideviceinstaller install ~/Downloads/PullApps/СБОЛ.ipa
 ```
 
 Признак успеха — в конце вывода:
@@ -148,7 +149,7 @@ ideviceinstaller list | grep -i "openbanking\|СБОЛ"
 2. Установить:
 
    ```bash
-   ideviceinstaller install ~/Downloads/ИМЯ.ipa
+   ideviceinstaller install ~/Downloads/PullApps/ИМЯ.ipa
    ```
 
 3. Проверить:

@@ -1,560 +1,502 @@
-* { box-sizing: border-box; }
+/* PullApps — Apple-style (macOS light). */
+:root {
+  --bg: #f5f5f7;
+  --bg-inset: #ececf0;
+  --card: #ffffff;
+  --hairline: #d9d9de;
+  --hairline-soft: #e9e9ec;
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #a1a1a6;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-active: #0060cf;
+  --accent-ring: rgba(0, 113, 227, 0.18);
+  --green: #1d9c13;
+  --green-tint: rgba(52, 199, 89, 0.14);
+  --red: #ff3b30;
+  --red-tint: rgba(255, 59, 48, 0.12);
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  --mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: #1b2636;
-  color: #e7ecf3;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  font-size: 14px;
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-stack);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
   overflow: hidden;
 }
 
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
+input, button { font-family: inherit; font-size: inherit; }
+.hidden { display: none !important; }
 
+/* ---------- Top bar ---------- */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: #142033;
-  border-bottom: 1px solid #233146;
+  gap: 12px;
+  padding: 12px 18px 10px;
+  background: rgba(247, 247, 249, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--hairline);
+  flex: 0 0 auto;
 }
+.topbar h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.2px; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.auth-pill {
+.account-switch {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 4px 12px;
   font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  white-space: nowrap;
-  max-width: 280px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
-  font-family: inherit;
+  white-space: nowrap;
+}
+.account-switch:hover { background: var(--bg); }
+.account-switch:disabled { opacity: 0.6; }
+
+.auth-pill {
+  appearance: none;
+  border: none;
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 12px;
   font-weight: 500;
-  transition: filter 0.15s;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.auth-pill:hover { filter: brightness(0.96); }
+.auth-pill.auth-ok { background: var(--green-tint); color: #136c0e; }
+.auth-pill.auth-bad { background: var(--red-tint); color: var(--red); }
+.auth-pill.auth-unknown { background: rgba(142, 142, 147, 0.16); color: var(--text-secondary); }
+
+/* ---------- Account dropdown ---------- */
+.account-menu {
+  position: fixed;
+  min-width: 260px;
+  max-width: 320px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-menu);
+  overflow: hidden;
+  z-index: 60;
+  padding: 6px;
+}
+.account-menu-header {
+  padding: 7px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-tertiary);
+}
+.account-menu-list { max-height: 260px; overflow-y: auto; }
+.account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+.account-item:hover { background: var(--bg); }
+.account-item.active { color: var(--accent); font-weight: 500; }
+.account-item.muted { cursor: default; color: var(--text-tertiary); }
+.account-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-check { color: var(--accent); font-weight: 600; }
+.account-remove {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.account-remove:hover { background: var(--red-tint); color: var(--red); }
+.account-menu-footer { border-top: 1px solid var(--hairline-soft); margin-top: 4px; padding-top: 6px; }
+.account-add {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.account-add:hover { background: var(--bg); }
+
+/* ---------- Section rows ---------- */
+.search-row, .manual-row, .folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  flex: 0 0 auto;
+}
+.manual-row, .folder-row { padding-top: 0; }
+.manual-row > label, .folder-row > label {
+  flex: 0 0 62px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: right;
 }
 
-.auth-pill:hover { filter: brightness(1.15); }
+input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 10px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+input[type="text"]:hover, input[type="email"]:hover, input[type="password"]:hover, input[type="number"]:hover {
+  border-color: #c6c6cc;
+}
+input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-ring); }
 
-.auth-unknown { background: #2a3850; color: #b9c4d6; }
-.auth-ok      { background: #1f3a2a; color: #9be0a8; border-color: #2c5b3e; }
-.auth-bad     { background: #3a1f24; color: #ffb1b1; border-color: #5b2c34; }
+#q {
+  flex: 1 1 auto;
+  padding-left: 32px;
+  height: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%238e8e93' d='M11.7 10.6a6.5 6.5 0 1 0-1.1 1.1l2.9 2.9a.8.8 0 0 0 1.1-1.1l-2.9-2.9ZM2.5 7a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 11px center;
+}
+#limit { flex: 0 0 64px; }
+#manualId { flex: 1 1 auto; }
+#outdir, #installIpa {
+  flex: 1 1 auto;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  cursor: default;
+}
 
-/* Sign-in panel */
+button { -webkit-user-select: none; user-select: none; }
+
+#searchBtn, #manualBtn, #signinSubmit {
+  appearance: none;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+#searchBtn { flex: 0 0 auto; }
+#searchBtn:hover, #manualBtn:hover, #signinSubmit:hover { background: var(--accent-hover); }
+#searchBtn:active, #manualBtn:active, #signinSubmit:active { background: var(--accent-active); transform: scale(0.98); }
+#searchBtn:disabled, #manualBtn:disabled, #signinSubmit:disabled, .ghost:disabled, .dl-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ghost {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex: 0 0 auto;
+}
+.ghost:hover { background: var(--bg); }
+
+/* ---------- Sign-in panel ---------- */
 .signin {
-  background: #18253a;
-  border-bottom: 1px solid #233146;
-  padding: 12px 16px;
+  margin: 10px 18px 4px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.signin.hidden { display: none; }
-
-.signin-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.signin-row.hidden { display: none; }
-
-.signin input[type="email"],
-.signin input[type="password"],
-.signin input[type="text"] {
-  flex: 1;
-  background: #0f1928;
-  border: 1px solid #2b3a52;
-  border-radius: 6px;
-  padding: 8px 10px;
-  color: #e7ecf3;
-  font-size: 13px;
-  outline: none;
-}
-
-.signin input:focus { border-color: #4a78c2; }
-
-.signin-msg {
-  flex: 1;
-  font-size: 12px;
-  color: #98a3b6;
-}
-.signin-msg-error { color: #ffb1b1; }
-.signin-msg-info  { color: #9bc6e0; }
-
-button.ghost {
-  background: transparent;
-  color: #98a3b6;
-  border: 1px solid #2b3a52;
-}
-button.ghost:hover:not(:disabled) {
-  background: #1f2a3d;
-  color: #e7ecf3;
-}
-
-/* When an iPhone is plugged in and visible to libimobiledevice, the "From
-   iPhone" button gently pulses so the user knows the action is live. */
-button.ghost.connected {
-  border-color: #4a78c2;
-  color: #d6e4f7;
-  animation: iphone-pulse 2.4s ease-in-out infinite;
-}
-@keyframes iphone-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(74, 120, 194, 0.55), 0 0 12px 0 rgba(74, 120, 194, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 0 4px rgba(74, 120, 194, 0.0), 0 0 18px 2px rgba(74, 120, 194, 0.55);
-  }
-}
-
+.signin-row { display: flex; gap: 8px; align-items: center; }
 .signin-current {
-  background: #122236;
-  border: 1px solid #233146;
-  border-radius: 6px;
-  padding: 8px 12px;
-  justify-content: space-between;
-}
-
-.signin-current-label {
-  font-size: 13px;
-  color: #b9c4d6;
-}
-.signin-current-label strong {
-  color: #e7ecf3;
-  font-weight: 600;
-}
-
-.search-row, .folder-row, .manual-row {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #233146;
-}
-
-.manual-row { padding-top: 0; }
-
-.install-row {
-  border-bottom: 1px solid rgba(74, 120, 194, 0.35);
-  background: #162236;
-}
-.install-row input[type="text"].install-ready {
-  border-color: #4a78c2;
-  color: #d6e4f7;
-}
-button.ghost.install-active {
-  border-color: #4a78c2;
-  color: #d6e4f7;
-}
-
-.folder-row label, .manual-row label {
-  color: #98a3b6;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+  color: var(--text-secondary);
   font-size: 12px;
-  width: 60px;
 }
+.signin-msg { flex: 1 1 auto; font-size: 12px; color: var(--text-secondary); line-height: 1.35; }
+.signin-msg-error { color: var(--red); }
+.signin-msg-info { color: var(--accent); }
+#signinCancel { flex: 0 0 auto; }
 
-.search-row input[type="text"],
-.folder-row input[type="text"],
-.manual-row input[type="text"] {
-  flex: 1;
-  background: #0f1928;
-  border: 1px solid #2b3a52;
-  border-radius: 6px;
-  padding: 8px 10px;
-  color: #e7ecf3;
-  font-size: 14px;
-  outline: none;
-}
-
-.search-row input[type="text"]:focus,
-.folder-row input[type="text"]:focus,
-.manual-row input[type="text"]:focus {
-  border-color: #4a78c2;
-}
-
-.search-row input[type="number"] {
-  width: 64px;
-  background: #0f1928;
-  border: 1px solid #2b3a52;
-  border-radius: 6px;
-  padding: 8px;
-  color: #e7ecf3;
-  font-size: 13px;
-  outline: none;
-  text-align: center;
-}
-
-button {
-  background: #2c5da3;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-button:hover:not(:disabled) { background: #3a72c1; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
-
+/* ---------- Results ---------- */
 .results {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
-  /* No top padding: filter bar (when present) sits flush against the controls
-     above. Bottom keeps a little breathing room before the status footer. */
-  padding: 0 0 8px 0;
+  padding: 6px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-
-.empty {
-  text-align: center;
-  color: #6e7a90;
-  padding: 32px 16px;
-  font-size: 13px;
+.empty { text-align: center; color: var(--text-tertiary); padding: 40px 0; font-size: 13px; }
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(245, 245, 247, 0.9);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  padding: 4px 2px 8px;
 }
+.filter-input-wrap { position: relative; flex: 1 1 auto; display: flex; align-items: center; }
+#iphoneFilter { padding-right: 28px; }
+.filter-clear {
+  position: absolute;
+  right: 6px;
+  appearance: none;
+  border: none;
+  background: rgba(142, 142, 147, 0.2);
+  color: var(--text);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.filter-clear.visible { display: flex; }
+.filter-clear:hover { background: rgba(142, 142, 147, 0.35); }
+.filter-count { flex: 0 0 auto; font-size: 12px; color: var(--text-tertiary); }
 
+/* ---------- App rows ---------- */
 .row {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #1f2a3d;
-  --progress: 0%;
-  background:
-    linear-gradient(to right,
-      rgba(74, 120, 194, 0.22) 0%,
-      rgba(74, 120, 194, 0.22) var(--progress),
-      transparent var(--progress));
-  transition: background 0.18s ease-out;
+  background: var(--card);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+.row:hover { border-color: var(--hairline); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06); }
+.row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  background: linear-gradient(90deg, rgba(0, 113, 227, 0.10), rgba(0, 113, 227, 0.05));
+  pointer-events: none;
+  transition: width 0.25s ease;
+}
+.row.done::after { background: rgba(52, 199, 89, 0.08); }
+.row > * { position: relative; z-index: 1; }
 
-/* App icon thumbnail on iPhone-list rows (lazy-fetched from iTunes lookup).
-   No background, no shadow — Apple's artwork JPGs already have the visual
-   weight they need; anything behind shows as a ring at the rounded corners. */
 .row-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  background: transparent;
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  flex: 0 0 auto;
+  background: var(--bg-inset);
+  object-fit: cover;
+  display: block;
   opacity: 0;
-  transition: opacity 0.18s ease-out;
-  /* Hide the browser's broken-image glyph when src never resolves (delisted
-     apps): no border, no alt-text, transparent text colour. */
-  color: transparent;
-  font-size: 0;
-  border: 0;
+  transition: opacity 0.2s ease;
 }
 .row-icon.loaded { opacity: 1; }
-.row-icon:not(.loaded) { width: 0; margin: 0; }
 
-.row.downloading {
-  background:
-    linear-gradient(to right,
-      rgba(74, 120, 194, 0.35) 0%,
-      rgba(74, 120, 194, 0.35) var(--progress),
-      rgba(74, 120, 194, 0.08) var(--progress));
-}
+.row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-title { font-size: 13px; font-weight: 500; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-secondary); min-width: 0; }
+.bundle { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.price { font-size: 12px; color: var(--text-tertiary); }
+.row-progress { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.row-badge { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; border-radius: 5px; padding: 1px 6px; vertical-align: 1px; }
+.row-badge-iphone { background: rgba(0, 113, 227, 0.12); color: var(--accent); }
+.row-badge-manual { background: rgba(142, 142, 147, 0.18); color: var(--text-secondary); }
 
-.row.done {
-  background:
-    linear-gradient(to right,
-      rgba(60, 140, 80, 0.30) 0%,
-      rgba(60, 140, 80, 0.30) 100%);
-}
-
-.row:hover { filter: brightness(1.08); }
-
-.row-progress {
-  color: #b9c4d6;
-  font-variant-numeric: tabular-nums;
-}
-
-.row-badge {
-  font-size: 10px;
-  background: #2a3850;
-  color: #b9c4d6;
-  border-radius: 4px;
-  padding: 1px 6px;
-  margin-left: 6px;
-  vertical-align: middle;
-}
-
-.row-badge-iphone {
-  background: #2c5da3;
-  color: white;
-}
-
-/* Per-row Apple ID (DSID) chip */
-.dsid-chip {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #2a3850;
-  color: #b9c4d6;
-  white-space: nowrap;
-  cursor: help;
-}
-.dsid-chip.dsid-match {
-  background: #1f3a2a;
-  color: #9be0a8;
-  border: 1px solid #2c5b3e;
-}
-.dsid-chip.dsid-mismatch {
-  background: #3a1f24;
-  color: #ffb1b1;
-  border: 1px solid #5b2c34;
-}
-.dsid-chip.dsid-unknown {
-  background: #2a3850;
-  color: #98a3b6;
-}
-
-/* App Store itemId chip — shown when we resolved the ID from device metadata */
-.appid-chip {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(74, 120, 194, 0.18);
-  color: #9bc6e0;
-  border: 1px solid rgba(74, 120, 194, 0.35);
-  cursor: help;
-  white-space: nowrap;
-}
-
-/* Inline App ID retry input shown when ipatool can't resolve a delisted bundle */
-.app-id-retry {
-  display: flex;
-  gap: 8px;
-  margin: 8px 0 4px 0;
-  width: 100%;
+.version-chip, .appid-chip, .dsid-chip {
+  display: inline-flex;
   align-items: center;
-}
-.app-id-input {
-  flex: 1;
-  background: #0f1928;
-  border: 1px solid #5b2c34;
-  border-radius: 6px;
-  padding: 6px 10px;
-  color: #e7ecf3;
-  font-size: 13px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  outline: none;
-}
-.app-id-input:focus { border-color: #4a78c2; }
-.app-id-retry-btn { padding: 6px 12px; font-size: 12px; }
-.app-id-cancel { padding: 6px 12px; font-size: 12px; }
-
-/* Sticky filter bar above iPhone-list rows */
-.filter-bar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 16px;
-  background: linear-gradient(to bottom, #1b2636 80%, transparent);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid #233146;
-}
-.filter-input-wrap {
-  position: relative;
-  flex: 1;
-  display: flex;
-}
-.filter-bar input {
-  flex: 1;
-  background: #0f1928;
-  border: 1px solid #2b3a52;
-  border-radius: 6px;
-  padding: 6px 28px 6px 10px; /* extra right padding leaves room for clear button */
-  color: #e7ecf3;
-  font-size: 13px;
-  outline: none;
-}
-.filter-bar input:focus { border-color: #4a78c2; }
-.filter-clear {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border-radius: 50%;
-  background: #2b3a52;
-  color: #98a3b6;
+  font-family: var(--mono);
+  font-size: 11px;
   border: none;
-  font-size: 14px;
-  line-height: 1;
-  display: none;
-  align-items: center;
-  justify-content: center;
+  border-radius: 999px;
+  padding: 1px 9px;
   cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.7;
 }
-.filter-clear.visible { display: flex; }
-.filter-clear:hover { background: #4a78c2; color: white; }
-.filter-count {
-  font-size: 12px;
-  color: #98a3b6;
-  font-variant-numeric: tabular-nums;
-  min-width: 60px;
-  text-align: right;
-}
+.version-chip { background: rgba(0, 113, 227, 0.1); color: var(--accent); }
+.version-chip:hover { background: rgba(0, 113, 227, 0.18); }
+.appid-chip { background: rgba(142, 142, 147, 0.16); color: var(--text-secondary); cursor: default; }
+.dsid-chip { cursor: default; }
+.dsid-match { background: var(--green-tint); color: var(--green); }
+.dsid-mismatch { background: var(--red-tint); color: var(--red); }
+.dsid-unknown { background: rgba(142, 142, 147, 0.16); color: var(--text-secondary); }
 
-/* "Sign in as owner" — shown when a row's DSID differs from the signed-in one */
-.signin-as-owner {
-  background: rgba(218, 99, 99, 0.18);
-  color: #ffb1b1;
-  border: 1px dashed rgba(218, 99, 99, 0.45);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.signin-as-owner:hover { background: rgba(218, 99, 99, 0.32); color: #ffd0d0; }
-
-/* "Use App ID" inline link on iPhone-list rows */
-.app-id-link {
-  background: transparent;
-  color: #4a78c2;
-  border: 1px dashed rgba(74, 120, 194, 0.4);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.app-id-link:hover { background: rgba(74, 120, 194, 0.15); color: #6a9be0; }
-
-/* Version chip + dropdown */
-.version-chip {
-  background: rgba(74, 120, 194, 0.15);
-  color: #b9c4d6;
-  border: 1px solid rgba(74, 120, 194, 0.3);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-  font-weight: 500;
-}
-.version-chip:hover { background: rgba(74, 120, 194, 0.3); }
-
-.version-menu {
-  position: fixed;
-  z-index: 100;
-  background: #1a2436;
-  border: 1px solid #2b3a52;
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-  min-width: 220px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.version-loading, .version-error {
-  padding: 12px 14px;
-  font-size: 12px;
-  color: #98a3b6;
-}
-.version-error { color: #ffb1b1; }
-
-.version-item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  background: transparent;
-  color: #e7ecf3;
+.signin-as-owner, .app-id-link {
+  appearance: none;
   border: none;
-  padding: 7px 12px;
-  font-size: 13px;
-  text-align: left;
+  background: transparent;
+  color: var(--accent);
+  padding: 2px 4px;
+  border-radius: 6px;
   cursor: pointer;
-  border-radius: 0;
-  gap: 10px;
-}
-.version-item:hover { background: #243349; }
-
-.version-item-latest {
-  border-bottom: 1px solid #2b3a52;
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-.ver-num { flex: 1; }
-.ver-date { color: #6e7a90; font-size: 11px; }
-.ver-tag {
-  background: #2c5da3;
-  color: white;
-  font-size: 10px;
-  border-radius: 4px;
-  padding: 1px 6px;
-}
-
-.row-main { min-width: 0; flex: 1; }
-
-.row-title {
-  font-weight: 500;
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-sub {
-  display: flex;
-  gap: 10px;
   font-size: 12px;
-  color: #8a96aa;
-  margin-top: 3px;
+  font-weight: 500;
 }
-
-.bundle {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 320px;
-}
-
-.version { color: #b9c4d6; }
-.price { color: #9be0a8; }
+.signin-as-owner:hover, .app-id-link:hover { background: rgba(0, 113, 227, 0.1); }
 
 .dl-btn {
-  flex-shrink: 0;
-  min-width: 110px;
+  appearance: none;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 16px;
+  font-weight: 500;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s ease, transform 0.05s ease;
+  min-width: 88px;
 }
+.dl-btn:hover { background: var(--accent-hover); }
+.dl-btn:active { background: var(--accent-active); transform: scale(0.98); }
 
-.status {
-  padding: 8px 16px;
-  border-top: 1px solid #233146;
-  font-size: 12px;
-  color: #98a3b6;
-  background: #142033;
-  min-height: 32px;
+.app-id-retry { display: flex; gap: 8px; align-items: center; padding: 10px 0 0; width: 100%; z-index: 2; }
+.app-id-input { flex: 1 1 auto; }
+.app-id-retry-btn {
+  appearance: none;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  height: 30px;
+  padding: 0 14px;
+  font-weight: 500;
+  cursor: pointer;
+  flex: 0 0 auto;
 }
-.status-ok    { color: #9be0a8; }
-.status-error { color: #ffb1b1; }
+.app-id-retry-btn:hover { background: var(--accent-hover); }
+
+/* ---------- Floating menus (versions) ---------- */
+.version-menu {
+  position: fixed;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-menu);
+  z-index: 60;
+  padding: 6px;
+}
+.version-loading, .version-error { padding: 10px 12px; font-size: 12px; text-align: center; }
+.version-loading { color: var(--text-tertiary); }
+.version-error { color: var(--red); }
+.version-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.version-item:hover { background: var(--bg); }
+.ver-num { font-family: var(--mono); flex: 1 1 auto; }
+.ver-date { color: var(--text-tertiary); font-size: 11px; }
+.ver-tag { background: rgba(0, 113, 227, 0.12); color: var(--accent); border-radius: 5px; font-size: 10px; padding: 1px 6px; }
+
+/* ---------- Status footer ---------- */
+.status {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  background: rgba(247, 247, 249, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-height: 31px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-ok { color: var(--green); }
+.status-error { color: var(--red); }
+.status-info { color: var(--accent); }
+
+/* iPhone-connected glow on the From iPhone button */
+#iphoneBtn.connected {
+  border-color: var(--green);
+  color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-tint);
+}
+#installBtn.install-active { color: var(--accent); border-color: var(--accent); }
+
+/* Scrollbars, macOS-like */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.22); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(0, 0, 0, 0.35); }
+::-webkit-scrollbar-track { background: transparent; }

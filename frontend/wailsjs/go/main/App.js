@@ -26,6 +26,10 @@ export function InvalidateSignedInDSID() {
   return window['go']['main']['App']['InvalidateSignedInDSID']();
 }
 
+export function ListAccounts() {
+  return window['go']['main']['App']['ListAccounts']();
+}
+
 export function ListInstalledApps() {
   return window['go']['main']['App']['ListInstalledApps']();
 }
@@ -54,10 +58,18 @@ export function PickOutputDir() {
   return window['go']['main']['App']['PickOutputDir']();
 }
 
+export function RemoveAccount(arg1) {
+  return window['go']['main']['App']['RemoveAccount'](arg1);
+}
+
 export function Search(arg1, arg2) {
   return window['go']['main']['App']['Search'](arg1, arg2);
 }
 
 export function SignedInDSID() {
   return window['go']['main']['App']['SignedInDSID']();
+}
+
+export function SwitchAccount(arg1) {
+  return window['go']['main']['App']['SwitchAccount'](arg1);
 }

@@ -11,8 +11,12 @@ macOS GUI поверх [`ipatool`](https://github.com/majd/ipatool) — вход
 
 - **Поиск** в App Store с показом bundle ID, версии и цены прямо в списке.
 - **Вход по Apple ID** прямо в приложении, с 2FA во втором шаге.
-- **Скачивание `.ipa`** в выбранную папку — строка результата сама становится
-  прогресс-баром по мере скачивания.
+- **Переключатель Apple ID** — несколько аккаунтов хранятся в Keychain и
+  переключаются в один клик из шапки; у новых аккаунтов запрашивается пароль
+  только один раз.
+- **Скачивание `.ipa`** в папку по умолчанию `~/Downloads/PullApps` (меняется
+  кнопкой «Choose…») — строка результата сама становится прогресс-баром по мере
+  скачивания.
 - **Выбор старой версии** из выпадающего списка (последние 25 версий с датами).
 - **Прямая загрузка по bundle ID, числовому App ID или вставленной ссылке App Store** —
   удобно для удалённых из App Store приложений.
@@ -74,7 +78,7 @@ macOS GUI поверх [`ipatool`](https://github.com/majd/ipatool) — вход
 git clone https://github.com/ВАШ_ЛОГИН/PullApps.git
 cd PullApps
 ./scripts/build-app.sh
-open build/bin/ipatool-gui.app
+open build/bin/PullApps.app
 ```
 
 Локальная разработка с горячей перезагрузкой:
@@ -87,17 +91,21 @@ wails dev
 
 Приложение ищет бинарник в порядке:
 
-1. `~/Library/Application Support/ipatool-gui/bin/ipatool`
+1. `~/Library/Application Support/PullApps/bin/ipatool`
 2. `Contents/Resources/bin/ipatool` внутри `.app`
 3. `/opt/homebrew/bin/ipatool`
 
 Чтобы «переопределить» версию (например, после `brew upgrade ipatool`):
 
 ```bash
-mkdir -p ~/Library/Application\ Support/ipatool-gui/bin
-cp /opt/homebrew/bin/ipatool ~/Library/Application\ Support/ipatool-gui/bin/ipatool
-chmod +x ~/Library/Application\ Support/ipatool-gui/bin/ipatool
+mkdir -p ~/Library/Application\ Support/PullApps/bin
+cp /opt/homebrew/bin/ipatool ~/Library/Application\ Support/PullApps/bin/ipatool
+chmod +x ~/Library/Application\ Support/PullApps/bin/ipatool
 ```
+
+> Ранние версии приложения использовали имя `ipatool-gui` — прежний
+> путь `~/Library/Application Support/ipatool-gui/bin` по-прежнему
+> распознаётся автоматически, ничего руками переносить не нужно.
 
 Затем полностью закройте приложение (Cmd+Q) и откройте заново.
 

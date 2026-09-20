@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# build-app.sh — produce a self-contained ipatool-gui.app.
+# build-app.sh — produce a self-contained PullApps.app.
 #
 # Steps:
 #   1. Build the patched ipatool (see build-ipatool.sh for the why) into build/ipatool.
-#   2. wails build — produces build/bin/ipatool-gui.app.
+#   2. wails build — produces build/bin/PullApps.app.
 #   3. Copy the patched ipatool into the app bundle at
 #      Contents/Resources/bin/ipatool. app.go's findTool checks that path, so a
 #      copied/distributed .app runs without Homebrew or Go installed.
@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 IPATOOL_BIN="$REPO_ROOT/build/ipatool"
-APP="$REPO_ROOT/build/bin/ipatool-gui.app"
+APP="$REPO_ROOT/build/bin/PullApps.app"
 
 command -v wails >/dev/null || { echo "error: 'wails' not found (go install github.com/wailsapp/wails/v2/cmd/wails@latest)" >&2; exit 1; }
 

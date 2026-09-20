@@ -15,14 +15,20 @@ import {
   DefaultOutputDir,
   PickIPAPath,
   InstallIPA,
+  ListAccounts,
+  SwitchAccount,
+  RemoveAccount,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
 const app = document.querySelector('#app');
 app.innerHTML = `
   <header class="topbar">
-    <h1>ipatool</h1>
-    <button id="auth" class="auth-pill auth-unknown" title="Click to sign in">checking…</button>
+    <h1>PullApps</h1>
+    <div class="topbar-actions">
+      <button id="accountSwitch" class="account-switch hidden" title="Switch Apple ID account">…</button>
+      <button id="auth" class="auth-pill auth-unknown" title="Click to sign in">checking…</button>
+    </div>
   </header>
 
   <section id="signinPanel" class="signin hidden">
@@ -113,6 +119,139 @@ async function initOutdir() {
   } catch {}
 }
 
+// --- Multi-account switcher ---
+const accountSwitchEl = $('accountSwitch');
+let accountMenu = null;
+
+function closeAccountMenu() {
+  if (accountMenu) {
+    accountMenu.remove();
+    accountMenu = null;
+  }
+}
+
+function accountLabel(a) {
+  return [a.name, a.email].filter(Boolean).join(' · ') || 'Account';
+}
+
+async function refreshAccounts() {
+  let list;
+  try {
+    list = await ListAccounts();
+  } catch (e) {
+    accountSwitchEl.classList.add('hidden');
+    return;
+  }
+  const accounts = list?.accounts || [];
+  if (accounts.length === 0) {
+    accountSwitchEl.classList.add('hidden');
+    return;
+  }
+  accountSwitchEl.classList.remove('hidden');
+  const total = accounts.length;
+  const active = accounts[list.activeIndex >= 0 ? list.activeIndex : 0];
+  accountSwitchEl.textContent = `${total} account${total === 1 ? '' : 's'} · ${(active && accountLabel(active)) || 'none'} ▾`;
+  accountSwitchEl.title = 'Click to switch Apple ID account';
+}
+
+async function openAccountMenu(anchorEl) {
+  closeAccountMenu();
+  const menu = document.createElement('div');
+  menu.className = 'account-menu';
+  document.body.appendChild(menu);
+  accountMenu = menu;
+
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.right = `${Math.max(8, window.innerWidth - rect.right - 4)}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+
+  let list;
+  try {
+    list = await ListAccounts();
+  } catch (e) {
+    menu.innerHTML = `<div class="version-error">${escapeHtml(String(e))}</div>`;
+    return;
+  }
+  const accounts = list?.accounts || [];
+  const activeIdx = list.activeIndex ?? -1;
+  const activeKey = (accounts[activeIdx] && accounts[activeIdx].dsid) || '';
+
+  menu.innerHTML = `
+    <div class="account-menu-header">Apple ID accounts</div>
+    <div class="account-menu-list">
+      ${accounts.length
+        ? accounts.map((a, i) => {
+            const label = accountLabel(a);
+            const isActive = i === activeIdx;
+            const removeBtn = !isActive
+              ? `<button class="account-remove" title="Forget ${escapeHtml(label)}">✕</button>`
+              : '';
+            return `<div class="account-item${isActive ? ' active' : ''}" data-dsid="${escapeHtml(a.dsid)}">
+              <span class="account-item-label">${escapeHtml(label)}${isActive ? ' <span class="account-check">✓</span>' : ''}</span>
+              ${removeBtn}
+            </div>`;
+          }).join('')
+        : '<div class="account-item muted">No saved accounts yet — sign in to create one.</div>'}
+    </div>
+    <div class="account-menu-footer">
+      <button class="account-add">＋ Sign in with another Apple ID…</button>
+    </div>`;
+
+  menu.querySelectorAll('.account-item').forEach((item) => {
+    item.addEventListener('click', async () => {
+      const dsid = item.dataset.dsid;
+      if (!dsid || dsid === activeKey) {
+        closeAccountMenu();
+        return;
+      }
+      closeAccountMenu();
+      anchorEl.disabled = true;
+      anchorEl.textContent = 'Switching…';
+      setStatus('Switching Apple ID account…');
+      try {
+        await SwitchAccount(dsid);
+        await refreshAuthAndCache();
+        closeVersionMenu();
+        setStatus('Switched Apple ID account.', 'ok');
+      } catch (e) {
+        setStatus(`Switch failed: ${e}`, 'error');
+      } finally {
+        anchorEl.disabled = false;
+        refreshAccounts();
+      }
+    });
+  });
+  menu.querySelectorAll('.account-remove').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = btn.closest('.account-item');
+      if (item) removeAccountFlow(item.dataset.dsid, accountLabel(accounts.find((a) => a.dsid === item.dataset.dsid) || {}));
+    });
+  });
+  menu.querySelector('.account-add')?.addEventListener('click', () => {
+    closeAccountMenu();
+    showSignin();
+  });
+}
+
+async function removeAccountFlow(dsid, label) {
+  if (!window.confirm(`Forget "${label}" from the switcher?\n\nThe session stays valid on this Mac until you sign out of it.`)) return;
+  closeAccountMenu();
+  try {
+    await RemoveAccount(dsid);
+    setStatus(`Forgot "${label}".`, 'ok');
+  } catch (e) {
+    setStatus(`Remove failed: ${e}`, 'error');
+  }
+  refreshAccounts();
+}
+
+accountSwitchEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (accountMenu) closeAccountMenu();
+  else openAccountMenu(accountSwitchEl);
+});
+
 function priceLabel(p) {
   if (!p || p === 0) return 'Free';
   return `$${Number(p).toFixed(2)}`;
@@ -170,6 +309,7 @@ function closeVersionMenu() {
 
 document.addEventListener('click', (e) => {
   if (openMenu && !openMenu.contains(e.target)) closeVersionMenu();
+  if (accountMenu && !accountMenu.contains(e.target) && e.target !== accountSwitchEl) closeAccountMenu();
 });
 
 // Cmd/Ctrl+F focuses the iPhone filter when the list is loaded, else the
@@ -1015,6 +1155,7 @@ async function refreshAuthAndCache() {
     if (info.name) lastKnownName = info.name;
   } catch {}
   await refreshSignedInDSID();
+  await refreshAccounts();
 }
 
 refreshAuthAndCache();

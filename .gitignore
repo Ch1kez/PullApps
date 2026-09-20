@@ -4,8 +4,7 @@
 # Build artifacts
 /ipatool-gui
 /ipa-downloader
-build/bin/
-build/ipatool
+/build/
 
 # Frontend
 node_modules/

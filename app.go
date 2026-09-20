@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +18,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,9 +39,10 @@ func findTool(name string) string {
 	// ipatool build carrying the June 2026 `26HOTFIX24` auth-endpoint fix that
 	// upstream Homebrew hasn't released yet) under our own Application Support
 	// dir, without touching Homebrew's binary. Drop a binary at
-	// ~/Library/Application Support/ipatool-gui/bin/<name> to take precedence.
-	if home, err := os.UserHomeDir(); err == nil {
-		paths = append(paths, filepath.Join(home, "Library", "Application Support", "ipatool-gui", "bin", name))
+	// ~/Library/Application Support/PullApps/bin/<name> (legacy:
+	// ipatool-gui/bin) to take precedence.
+	for _, d := range appSupportDirs() {
+		paths = append(paths, filepath.Join(d, "bin", name))
 	}
 	// Self-contained .app: build-app.sh bundles the patched ipatool at
 	// <app>/Contents/Resources/bin/<name> so a distributed app works without
@@ -80,7 +82,13 @@ var (
 // ipatool stores its account in the macOS Keychain under this service name
 // (see ipatool source: cmd/constants.go). The stored value is a JSON blob
 // containing directoryServicesIdentifier (DSID), email, name, etc.
-const ipatoolKeychainService = "ipatool-auth.service"
+// ipatoolKeychainService is the macOS Keychain service ipatool uses for its
+// single session (see ipatool cmd/constants.go). ipatoolKeychainAccount is the
+// matching "account" attribute (byteness/keyring's KeychainBackend). Both are
+// variables (not consts) so tests can point them at throwaway services and
+// never touch the real session.
+var ipatoolKeychainService = "ipatool-auth.service"
+var ipatoolKeychainAccount = "account"
 
 // dataAsString rewrites every <data>BASE64</data> in a plist XML stream as
 // <string>BASE64</string> so that plutil's JSON converter — which refuses to
@@ -118,9 +126,11 @@ func plistToXML(b []byte) []byte {
 }
 
 type App struct {
-	ctx          context.Context
-	dsidOnce     sync.Once
-	cachedDSID   string
+	ctx         context.Context
+	dsidOnce    sync.Once
+	cachedDSID  string
+	vaultMu     sync.Mutex // guards the multi-account vault manifest + snapshot IO
+	migrateOnce sync.Once  // guards the one-shot legacy-vault migration
 }
 
 func NewApp() *App { return &App{} }
@@ -129,11 +139,11 @@ func NewApp() *App { return &App{} }
 // not a secret (it's just an account number), so storing it in plaintext is
 // fine and lets us avoid prompting the user for keychain access on every launch.
 func dsidCachePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	dirs := appSupportDirs()
+	if len(dirs) == 0 {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "ipatool-gui", "dsid")
+	return filepath.Join(dirs[0], "dsid")
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -155,11 +165,11 @@ type LoginResult struct {
 }
 
 type AppResult struct {
-	ID        int64   `json:"id"`
-	BundleID  string  `json:"bundleID"`
-	Name      string  `json:"name"`
-	Version   string  `json:"version"`
-	Price     float64 `json:"price"`
+	ID       int64   `json:"id"`
+	BundleID string  `json:"bundleID"`
+	Name     string  `json:"name"`
+	Version  string  `json:"version"`
+	Price    float64 `json:"price"`
 }
 
 type SearchResponse struct {
@@ -183,12 +193,12 @@ type Version struct {
 }
 
 type DownloadResult struct {
-	Success     bool   `json:"success"`
-	OutputPath  string `json:"outputPath,omitempty"`
-	BundleID    string `json:"bundleID,omitempty"`
-	Name        string `json:"name,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Success    bool   `json:"success"`
+	OutputPath string `json:"outputPath,omitempty"`
+	BundleID   string `json:"bundleID,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // InstallResult reports the outcome of installing an .ipa onto a connected
@@ -276,6 +286,9 @@ func (a *App) Login(email, password, authCode string) LoginResult {
 		_ = json.Unmarshal(line, &raw)
 	}
 	if err == nil && raw.Success {
+		// Persist the freshly-mounted session into the multi-account vault so
+		// it shows up in the switcher and survives future switches.
+		a.snapshotActive()
 		return LoginResult{Success: true}
 	}
 	msg := firstNonEmpty(raw.Error, raw.Message, errOrEmpty(err))
@@ -304,6 +317,468 @@ func (a *App) Logout() error {
 	_, _, err := a.runIpatool("auth", "revoke")
 	a.InvalidateSignedInDSID()
 	return err
+}
+
+// ---- Multi-account vault ----
+// ipatool keeps exactly ONE signed-in Apple ID at a time: its session lives in
+// the macOS Keychain under the fixed service "ipatool-auth.service" (key
+// "account") plus a shared cookie jar at ~/.ipatool/cookies. There is no
+// built-in way to keep several accounts around.
+//
+// We layer a private account "vault" on top of that. For each account we keep:
+//   - the ipatool account JSON blob (email, passwordToken, DSID, ...) in the
+//     macOS Keychain under the shared service "pullapps.accounts", one
+//     generic-password entry per account keyed by its DSID — same protection
+//     level ipatool itself uses;
+//   - that account's cookie jar at
+//     ~/Library/Application Support/PullApps/accounts/<dsid>/cookies (0600,
+//     mirroring ipatool's own plaintext cookie file);
+//   - a manifest (accounts.json) with non-secret metadata.
+//
+// "Switching" to an account copies its snapshot into ipatool's two live slots
+// (keychain entry + cookie jar) and drops the DSID cache. Before switching we
+// re-snapshot whichever account is currently active, so every account that has
+// ever been signed in is remembered automatically — no manual "save" step.
+
+// vaultKeychainService is a DIFFERENT keychain service than ipatool's own
+// ("ipatool-auth.service") where we keep one generic-password entry per
+// remembered account, keyed by the account's DSID. Variable so tests can
+// isolate it too.
+var vaultKeychainService = "pullapps.accounts"
+
+// legacyVaultKeychainService is the vault service name pre-rename builds used
+// ("ipatool-gui.accounts"). Any accounts stored there are migrated to the
+// current service on first use, so nothing breaks for existing installs.
+const legacyVaultKeychainService = "ipatool-gui.accounts"
+
+// ipatoolCookieFile is the shared cookie jar ipatool keeps under ~/.ipatool.
+const ipatoolCookieFile = ".ipatool/cookies"
+
+// appSupportDirOverride, when non-empty, replaces `~/Library/Application
+// Support/PullApps` for ALL on-disk state (vault, cookies stash, DSID
+// cache). Tests set it to a temp dir so no real user files are touched. An
+// empty value keeps the real per-user directory — note this only affects files;
+// Keychain access is deliberately left alone (macOS security(1) needs the real
+// login keychain regardless of HOME).
+var appSupportDirOverride = ""
+
+// appSupportDirName is where PullApps keeps its on-disk state (override bins,
+// DSID cache, account vault). legacyAppSupportDirName is the pre-rename name —
+// still honoured everywhere so existing installs work without a migration step.
+const appSupportDirName = "PullApps"
+const legacyAppSupportDirName = "ipatool-gui"
+
+// appSupportDirs returns the Application Support candidates in precedence
+// order: the test override (when set), then the current app name, then the
+// legacy name.
+func appSupportDirs() []string {
+	if appSupportDirOverride != "" {
+		return []string{appSupportDirOverride}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, "Library", "Application Support", appSupportDirName),
+		filepath.Join(home, "Library", "Application Support", legacyAppSupportDirName),
+	}
+}
+
+func appSupportRoot() string {
+	dirs := appSupportDirs()
+	if len(dirs) == 0 {
+		return ""
+	}
+	return dirs[0]
+}
+
+// ipatoolCookiesPath is where ipatool keeps its shared cookie jar.
+func ipatoolCookiesPath() string {
+	if appSupportDirOverride != "" {
+		return filepath.Join(appSupportDirOverride, "live-cookies")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ipatoolCookieFile)
+}
+
+// StoredAccount is the non-secret metadata of a remembered Apple ID. DSID
+// holds the vault key: the account's DSID when available, otherwise its email.
+type StoredAccount struct {
+	DSID  string `json:"dsid"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// AccountList is what the switcher UI renders: every remembered account plus
+// flags for which one is active right now.
+type AccountList struct {
+	Accounts []StoredAccount `json:"accounts"`
+	Active   int             `json:"activeIndex"` // index into Accounts, or -1
+	SignedIn bool            `json:"signedIn"`    // ipatool currently has a session at all
+}
+
+func (a *App) vaultRoot() string {
+	if root := appSupportRoot(); root != "" {
+		return filepath.Join(root, "accounts")
+	}
+	return ""
+}
+
+// vaultManifestCandidates returns every plausible manifest location, newest
+// (PullApps) first, so a pre-rename install's account list is picked up too.
+func (a *App) vaultManifestCandidates() []string {
+	var candidates []string
+	for _, d := range appSupportDirs() {
+		candidates = append(candidates, filepath.Join(d, "accounts", "accounts.json"))
+	}
+	return candidates
+}
+
+func (a *App) vaultManifestPath() string { return filepath.Join(a.vaultRoot(), "accounts.json") }
+
+func (a *App) vaultCookiesPath(key string) string {
+	return filepath.Join(a.vaultRoot(), sanitizeFilename(key), "cookies")
+}
+
+// ipatoolAccount is the JSON shape ipatool stores in its own keychain entry
+// (see ipatool pkg/appstore/account.go).
+type ipatoolAccount struct {
+	Email               string `json:"email"`
+	PasswordToken       string `json:"passwordToken"`
+	DirectoryServicesID string `json:"directoryServicesIdentifier"`
+	Name                string `json:"name"`
+}
+
+// rawLiveBlob returns the exact bytes currently stored in ipatool's live
+// keychain slot (service ipatool-auth.service / key account).
+func rawLiveBlob() ([]byte, error) {
+	cmd := exec.Command(securityBin, "find-generic-password", "-s", ipatoolKeychainService, "-a", ipatoolKeychainAccount, "-w")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(out), nil
+}
+
+// readActiveBlob returns the ipatool account JSON currently mounted in the
+// live keychain slot, normalized to raw JSON.
+func readActiveBlob() ([]byte, error) {
+	raw, err := rawLiveBlob()
+	if err != nil {
+		return nil, err
+	}
+	return normalizeIpatoolBlob(raw), nil
+}
+
+// isHexForm reports whether b looks like an even-length hex-ascii string.
+func isHexForm(b []byte) bool {
+	if len(b) == 0 || len(b)%2 != 0 {
+		return false
+	}
+	for _, c := range b {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeIpatoolBlob hex-decodes the blob when it is a hex-encoded JSON
+// string, and passes raw (non-hex) values through untouched.
+func normalizeIpatoolBlob(b []byte) []byte {
+	b = bytes.TrimSpace(b)
+	if isHexForm(b) {
+		if dec, err := hex.DecodeString(string(b)); err == nil {
+			return dec
+		}
+	}
+	return b
+}
+
+// parseIpatoolAccount extracts the fields we need from an ipatool account JSON blob.
+func parseIpatoolAccount(blob []byte) (ipatoolAccount, bool) {
+	var acc ipatoolAccount
+	if err := json.Unmarshal(blob, &acc); err != nil {
+		return acc, false
+	}
+	if acc.Email == "" && acc.DirectoryServicesID == "" {
+		return acc, false
+	}
+	return acc, true
+}
+
+// accountKey returns the stable vault key for an account — the DSID when
+// available (stable per Apple ID), otherwise the email. Used as the Keychain
+// "account" field and the cookies subdirectory name.
+func accountKey(acc ipatoolAccount) string {
+	if k := strings.TrimSpace(acc.DirectoryServicesID); k != "" {
+		return k
+	}
+	return strings.TrimSpace(acc.Email)
+}
+
+func (a *App) loadManifest() []StoredAccount {
+	a.vaultMu.Lock()
+	defer a.vaultMu.Unlock()
+	var b []byte
+	for _, p := range a.vaultManifestCandidates() {
+		if data, err := os.ReadFile(p); err == nil {
+			b = data
+			break
+		}
+	}
+	if b == nil {
+		return nil
+	}
+	var list []StoredAccount
+	if jerr := json.Unmarshal(b, &list); jerr != nil {
+		return nil
+	}
+	return list
+}
+
+func (a *App) saveManifest(list []StoredAccount) {
+	a.vaultMu.Lock()
+	defer a.vaultMu.Unlock()
+	if list == nil {
+		list = []StoredAccount{}
+	}
+	b, _ := json.MarshalIndent(list, "", "  ")
+	if root := a.vaultRoot(); root != "" {
+		_ = os.MkdirAll(root, 0o700)
+		_ = os.WriteFile(a.vaultManifestPath(), b, 0o600)
+	}
+}
+
+// upsertManifest adds or updates the metadata row for one remembered account.
+func (a *App) upsertManifest(acc StoredAccount) {
+	list := a.loadManifest()
+	for i := range list {
+		if list[i].DSID != acc.DSID {
+			continue
+		}
+		if acc.Email != "" {
+			list[i].Email = acc.Email
+		}
+		if acc.Name != "" {
+			list[i].Name = acc.Name
+		}
+		a.saveManifest(list)
+		return
+	}
+	a.saveManifest(append(list, acc))
+}
+
+func (a *App) removeFromManifest(key string) {
+	list := a.loadManifest()
+	kept := list[:0]
+	for _, e := range list {
+		if e.DSID != key {
+			kept = append(kept, e)
+		}
+	}
+	a.saveManifest(kept)
+}
+
+// vaultGetBlob reads an account's ipatool JSON blob from our keychain vault.
+func vaultGetBlob(key string) ([]byte, error) {
+	cmd := exec.Command(securityBin, "find-generic-password", "-s", vaultKeychainService, "-a", key, "-w")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(out), nil
+}
+
+// vaultPutBlob writes (or overwrites) an account's ipatool JSON blob in our
+// keychain vault.
+func vaultPutBlob(key string, blob []byte) error {
+	cmd := exec.Command(securityBin, "add-generic-password",
+		"-a", key, "-s", vaultKeychainService, "-U", "-w", string(blob))
+	return cmd.Run()
+}
+
+// vaultDeleteBlob removes an account's blob from our keychain vault.
+func vaultDeleteBlob(key string) error {
+	cmd := exec.Command(securityBin, "delete-generic-password",
+		"-s", vaultKeychainService, "-a", key)
+	return cmd.Run()
+}
+
+// snapshotActive copies the currently-active ipatool session (keychain blob +
+// cookie jar) into the vault under its own key. Safe to call any time: if there
+// is no live session (or it's unparseable) it's a no-op. This is what makes the
+// switcher remember anything the user has signed into — call it whenever the
+// current session is about to be displaced.
+func (a *App) snapshotActive() {
+	blob, err := readActiveBlob()
+	if err != nil {
+		return
+	}
+	acc, ok := parseIpatoolAccount(blob)
+	if !ok {
+		return
+	}
+	key := accountKey(acc)
+	if key == "" {
+		return
+	}
+	_ = vaultPutBlob(key, blob)
+
+	if cookieSrc := ipatoolCookiesPath(); cookieSrc != "" {
+		if b, rerr := os.ReadFile(cookieSrc); rerr == nil && len(bytes.TrimSpace(b)) > 0 {
+			if p := a.vaultCookiesPath(key); p != "" {
+				_ = os.MkdirAll(filepath.Dir(p), 0o700)
+				_ = os.WriteFile(p, b, 0o600)
+			}
+		}
+	}
+	a.upsertManifest(StoredAccount{
+		DSID:  key,
+		Email: strings.TrimSpace(acc.Email),
+		Name:  strings.TrimSpace(acc.Name),
+	})
+}
+
+// ListAccounts returns every remembered account plus which one is currently
+// active (activeIndex). The active account is always emitted first.
+func (a *App) ListAccounts() AccountList {
+	blob, err := readActiveBlob()
+	var activeKey string
+	if err == nil {
+		if acc, ok := parseIpatoolAccount(blob); ok {
+			activeKey = accountKey(acc)
+		}
+	}
+	list := a.loadManifest()
+	out := make([]StoredAccount, 0, len(list)+1)
+	activeIdx := -1
+	// Make sure a live session that isn't in the manifest yet is shown (and
+	// put it first); drop dead manifest entries that lost their keychain blob.
+	for _, e := range list {
+		if e.DSID == "" || e.DSID == activeKey {
+			continue
+		}
+		if _, gerr := vaultGetBlob(e.DSID); gerr != nil {
+			continue
+		}
+		out = append(out, e)
+	}
+	if activeKey != "" {
+		out = append([]StoredAccount{{DSID: activeKey, Email: ""}}, out...)
+	}
+	for i := range out {
+		if out[i].DSID == activeKey {
+			activeIdx = i
+			// Fill display fields from the live blob for the active entry.
+			if acc, ok := parseIpatoolAccount(blob); ok {
+				out[i].Email = acc.Email
+				out[i].Name = acc.Name
+			} else if m, ok := a.manifestByDSID(activeKey); ok {
+				out[i].Email = m.Email
+				out[i].Name = m.Name
+			}
+			break
+		}
+	}
+	return AccountList{
+		Accounts: out,
+		Active:   activeIdx,
+		SignedIn: activeKey != "",
+	}
+}
+
+func (a *App) manifestByDSID(dsid string) (StoredAccount, bool) {
+	if dsid == "" {
+		return StoredAccount{}, false
+	}
+	for _, e := range a.loadManifest() {
+		if e.DSID == dsid {
+			return e, true
+		}
+	}
+	return StoredAccount{}, false
+}
+
+// SwitchAccount activates a remembered account by writing its snapshot back
+// into ipatool's live keychain slot and cookie jar, then clearing the cached
+// DSID. The previously-active session is snapshotted first so nothing is lost.
+func (a *App) SwitchAccount(key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("account key is required")
+	}
+	a.snapshotActive()
+
+	blob, err := vaultGetBlob(key)
+	if err != nil {
+		return errors.New("account is not in the vault: " + key)
+	}
+	// The `security` CLI returns non-ASCII keychain values hex-encoded, so the
+	// vault may hand back a hex string of raw JSON. ipatool reads its live slot
+	// as raw bytes, so normalize to raw JSON before parsing and mounting.
+	blob = normalizeIpatoolBlob(blob)
+	var target ipatoolAccount
+	if err := json.Unmarshal(blob, &target); err != nil {
+		return err
+	}
+	key = accountKey(target)
+	if key == "" {
+		return errors.New("couldn't determine account key")
+	}
+
+	// Mount the target session into ipatool's live slots as raw JSON.
+	if err := vaultPutBlob2(ipatoolKeychainService, ipatoolKeychainAccount, blob); err != nil {
+		return err
+	}
+	if cookiePath := ipatoolCookiesPath(); cookiePath != "" {
+		if p := a.vaultCookiesPath(key); p != "" {
+			if b, rerr := os.ReadFile(p); rerr == nil && len(bytes.TrimSpace(b)) > 0 {
+				_ = os.MkdirAll(filepath.Dir(cookiePath), 0o700)
+				_ = os.WriteFile(cookiePath, b, 0o600)
+			} else if _, serr := os.Stat(cookiePath); serr == nil {
+				_ = os.Remove(cookiePath) // no saved jar for this account -> start clean
+			}
+		}
+	}
+	a.InvalidateSignedInDSID()
+
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "accounts:switched", map[string]any{
+			"email": target.Email,
+			"name":  target.Name,
+			"dsid":  target.DirectoryServicesID,
+		})
+	}
+	return nil
+}
+
+// vaultPutBlob2 writes a blob into an arbitrary (service, account) slot — used
+// to mount a saved snapshot into ipatool's own live keychain entry.
+func vaultPutBlob2(service, acct string, blob []byte) error {
+	cmd := exec.Command(securityBin, "add-generic-password",
+		"-a", acct, "-s", service, "-U", "-w", string(blob))
+	return cmd.Run()
+}
+
+// RemoveAccount forgets a remembered account (vault keychain blob, cookies and
+// manifest). It does NOT revoke/void the account on Apple's side — if the
+// account is currently active, its live ipatool session is left untouched.
+func (a *App) RemoveAccount(key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("account key is required")
+	}
+	_ = vaultDeleteBlob(key)
+	if p := a.vaultCookiesPath(key); p != "" {
+		_ = os.RemoveAll(filepath.Dir(p))
+	}
+	a.removeFromManifest(key)
+	return nil
 }
 
 func (a *App) Search(term string, limit int) (SearchResponse, error) {
@@ -593,21 +1068,26 @@ func (a *App) DeviceConnected() bool {
 // ApplicationDSID stamped into every installed app's plist on the device.
 //
 // Cached per-process via sync.Once and also persisted to a plain file under
-// ~/Library/Application Support/ipatool-gui/dsid so subsequent launches don't
+// ~/Library/Application Support/PullApps/dsid so subsequent launches don't
 // trigger a keychain access prompt. The DSID is not a credential — it's a
 // public-by-construction account number — so plaintext persistence is fine.
 //
 // Returns "" if the entry can't be read (signed out, denied, etc.).
 func (a *App) SignedInDSID() string {
 	a.dsidOnce.Do(func() {
-		// 1. Try the on-disk cache first — no prompt, instant.
-		if p := dsidCachePath(); p != "" {
-			if b, err := os.ReadFile(p); err == nil {
-				if v := strings.TrimSpace(string(b)); v != "" {
-					a.cachedDSID = v
-					return
-				}
+		// 1. Try the on-disk cache first — no prompt, instant. Read any
+		//    candidate (current name, then legacy) so a pre-rename install
+		//    still resolves without a keychain prompt.
+		var cached []byte
+		for _, d := range appSupportDirs() {
+			if b, err := os.ReadFile(filepath.Join(d, "dsid")); err == nil {
+				cached = b
+				break
 			}
+		}
+		if v := strings.TrimSpace(string(cached)); v != "" {
+			a.cachedDSID = v
+			return
 		}
 		// 2. Cache miss — read the keychain entry (may prompt). On success,
 		//    persist so future launches skip the prompt entirely.
@@ -619,7 +1099,7 @@ func (a *App) SignedInDSID() string {
 		var raw struct {
 			DSID string `json:"directoryServicesIdentifier"`
 		}
-		if jerr := json.Unmarshal(bytes.TrimSpace(out), &raw); jerr != nil {
+		if jerr := json.Unmarshal(normalizeIpatoolBlob(out), &raw); jerr != nil {
 			return
 		}
 		a.cachedDSID = raw.DSID
@@ -639,8 +1119,8 @@ func (a *App) SignedInDSID() string {
 func (a *App) InvalidateSignedInDSID() {
 	a.cachedDSID = ""
 	a.dsidOnce = sync.Once{}
-	if p := dsidCachePath(); p != "" {
-		_ = os.Remove(p)
+	for _, d := range appSupportDirs() {
+		_ = os.Remove(filepath.Join(d, "dsid"))
 	}
 }
 
@@ -679,7 +1159,7 @@ func (a *App) DefaultOutputDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, "Downloads")
+	return filepath.Join(home, "Downloads", appSupportDirName)
 }
 
 func (a *App) ListVersions(bundleID string) ([]Version, error) {
@@ -788,9 +1268,9 @@ func (a *App) Download(bundleID, outputDir, externalVersionID string, purchase b
 	}
 
 	wruntime.EventsEmit(a.ctx, "download:start", map[string]any{
-		"bundleID":    bundleID,
-		"output":      outPath,
-		"totalBytes":  expectedSize,
+		"bundleID":   bundleID,
+		"output":     outPath,
+		"totalBytes": expectedSize,
 	})
 
 	// Poll the output file size in a goroutine and emit progress events.
