@@ -8,6 +8,8 @@
 #   3. Copy the patched ipatool into the app bundle at
 #      Contents/Resources/bin/ipatool. app.go's findTool checks that path, so a
 #      copied/distributed .app runs without Homebrew or Go installed.
+#   4. Re-sign the complete bundle after modifying it. Wails signs before our
+#      copy step, so omitting this makes Gatekeeper report the app as damaged.
 #
 # Usage: scripts/build-app.sh [extra wails build args...]
 #
@@ -24,19 +26,24 @@ APP="$REPO_ROOT/build/bin/PullApps.app"
 
 command -v wails >/dev/null || { echo "error: 'wails' not found (go install github.com/wailsapp/wails/v2/cmd/wails@latest)" >&2; exit 1; }
 
-echo "==> [1/3] Building patched ipatool"
+echo "==> [1/4] Building patched ipatool"
 # Don't also clobber the dev override here; we only need the bundle copy.
 OUT="$IPATOOL_BIN" SKIP_INSTALL=1 "$REPO_ROOT/scripts/build-ipatool.sh"
 
-echo "==> [2/3] wails build"
+echo "==> [2/4] wails build"
 wails build "$@"
 
-echo "==> [3/3] Bundling ipatool into the .app"
+echo "==> [3/4] Bundling ipatool into the .app"
 [ -d "$APP" ] || { echo "error: app not found at $APP" >&2; exit 1; }
 RES_BIN="$APP/Contents/Resources/bin"
 mkdir -p "$RES_BIN"
 cp "$IPATOOL_BIN" "$RES_BIN/ipatool"
 chmod +x "$RES_BIN/ipatool"
 echo "==> Bundled: $RES_BIN/ipatool"
+
+echo "==> [4/4] Re-signing the completed app bundle"
+command -v codesign >/dev/null || { echo "error: 'codesign' is required to package the macOS app" >&2; exit 1; }
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "Done: $APP"

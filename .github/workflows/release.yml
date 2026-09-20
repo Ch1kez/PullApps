@@ -87,6 +87,7 @@ jobs:
         run: |
           lipo -archs build/bin/PullApps.app/Contents/MacOS/PullApps
           lipo -archs build/bin/PullApps.app/Contents/Resources/bin/ipatool
+          codesign --verify --deep --strict --verbose=2 build/bin/PullApps.app
 
       - name: Package as zip
         id: pkg
@@ -96,15 +97,18 @@ jobs:
           # ditto preserves resource forks and extended attrs better than `zip`
           # and is the standard way to package a .app for distribution.
           ditto -c -k --sequesterRsrc --keepParent PullApps.app "$ARTIFACT"
+          shasum -a 256 "$ARTIFACT" > "$ARTIFACT.sha256"
           echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
-          ls -lh "$ARTIFACT"
+          echo "checksum=$ARTIFACT.sha256" >> $GITHUB_OUTPUT
+          ls -lh "$ARTIFACT" "$ARTIFACT.sha256"
 
       - name: Create release and upload artifact
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.name }}
           ARTIFACT: build/bin/${{ steps.pkg.outputs.artifact }}
+          CHECKSUM: build/bin/${{ steps.pkg.outputs.checksum }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --verify-tag --generate-notes --title "PullApps $TAG"
-          gh release upload "$TAG" "$ARTIFACT" --clobber
+          gh release upload "$TAG" "$ARTIFACT" "$CHECKSUM" --clobber
